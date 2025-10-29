@@ -182,7 +182,7 @@ def decide_command(frame, roi_height_ratio=0.3, roi_width_ratio=0.3, thresh=150,
     return command, left_roi, right_roi, left_binary, right_binary, debug_info
 
 
-def draw_debug_overlay(frame, debug_info, command):
+def draw_debug_overlay(frame, debug_info, command, left_binary, right_binary):
     """
     디버그 정보를 프레임에 오버레이
 
@@ -190,13 +190,30 @@ def draw_debug_overlay(frame, debug_info, command):
         frame: 입력 프레임
         debug_info: 디버그 정보 딕셔너리
         command: 현재 제어 명령
+        left_binary: 좌측 이진화 이미지
+        right_binary: 우측 이진화 이미지
     """
 
     # ROI 영역 표시
     left_coords = debug_info["roi_coords"]["left"]
     right_coords = debug_info["roi_coords"]["right"]
 
-    # 좌측 ROI 박스 (녹색=라인있음, 빨강=라인없음)
+    # 감지된 라인을 노란색으로 표시
+    # 좌측 라인
+    left_y1, left_y2 = left_coords[1], left_coords[3]
+    left_x1, left_x2 = left_coords[0], left_coords[2]
+    left_colored = cv2.cvtColor(left_binary, cv2.COLOR_GRAY2BGR)
+    yellow_mask_left = cv2.inRange(left_colored, (200, 200, 200), (255, 255, 255))
+    frame[left_y1:left_y2, left_x1:left_x2][yellow_mask_left > 0] = [0, 255, 255]  # 노란색 (BGR)
+
+    # 우측 라인
+    right_y1, right_y2 = right_coords[1], right_coords[3]
+    right_x1, right_x2 = right_coords[0], right_coords[2]
+    right_colored = cv2.cvtColor(right_binary, cv2.COLOR_GRAY2BGR)
+    yellow_mask_right = cv2.inRange(right_colored, (200, 200, 200), (255, 255, 255))
+    frame[right_y1:right_y2, right_x1:right_x2][yellow_mask_right > 0] = [0, 255, 255]  # 노란색 (BGR)
+
+    # ROI 박스 (녹색=라인있음, 빨강=라인없음)
     left_color = (0, 255, 0) if debug_info["left_has_line"] else (0, 0, 255)
     cv2.rectangle(frame, (left_coords[0], left_coords[1]),
                   (left_coords[2], left_coords[3]), left_color, 2)
@@ -260,7 +277,7 @@ def main():
                 motor_stop()
 
             # 디버그 오버레이
-            frame = draw_debug_overlay(frame, debug_info, command)
+            frame = draw_debug_overlay(frame, debug_info, command, left_binary, right_binary)
 
             # 화면 출력
             cv2.imshow("Line Tracer", frame)

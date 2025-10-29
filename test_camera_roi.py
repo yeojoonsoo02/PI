@@ -97,6 +97,17 @@ def main():
             right_pixels = cv2.countNonZero(right_binary)
 
             # 디버그 오버레이
+            # 감지된 라인을 노란색으로 표시
+            # 좌측 라인
+            left_colored = cv2.cvtColor(left_binary, cv2.COLOR_GRAY2BGR)
+            yellow_mask_left = cv2.inRange(left_colored, (200, 200, 200), (255, 255, 255))
+            frame[roi_y:h, 0:roi_w][yellow_mask_left > 0] = [0, 255, 255]  # 노란색 (BGR)
+
+            # 우측 라인
+            right_colored = cv2.cvtColor(right_binary, cv2.COLOR_GRAY2BGR)
+            yellow_mask_right = cv2.inRange(right_colored, (200, 200, 200), (255, 255, 255))
+            frame[roi_y:h, w-roi_w:w][yellow_mask_right > 0] = [0, 255, 255]  # 노란색 (BGR)
+
             # 좌측 ROI 박스 (파란색)
             cv2.rectangle(frame, (0, roi_y), (roi_w, h), (255, 0, 0), 2)
             cv2.putText(frame, "LEFT ROI", (5, roi_y - 10),
