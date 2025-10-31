@@ -6,11 +6,13 @@
 
 ```
 PI/
+├── line_tracer_optimized.py            # 최적화 버전 (권장) 🌟
 ├── dual_roi_line_tracer_improved.py    # GUI 버전 (모니터 연결 필요)
-├── dual_roi_line_tracer_headless.py    # 헤드리스 버전 (SSH용) ⭐
+├── dual_roi_line_tracer_headless.py    # 헤드리스 버전 (SSH용)
 ├── camera_diagnostic.py                 # 카메라 진단 도구
-├── run_headless.sh                      # 헤드리스 모드 실행 스크립트
-├── run_line_tracer.sh                   # GUI 모드 실행 스크립트
+├── run_optimized.sh                     # 최적화 버전 실행 🌟
+├── run_headless.sh                      # 헤드리스 모드 실행
+├── run_line_tracer.sh                   # GUI 모드 실행
 ├── README.md                            # 이 파일
 ├── README_LINE_TRACER.md               # 상세 사용 설명서
 │
@@ -25,20 +27,37 @@ PI/
 
 ## 🚀 빠른 시작
 
-### SSH로 접속했을 때 (권장) ⭐
+### 최적화 버전 (가장 권장) 🌟
 
 ```bash
-# 1. 카메라 진단
+# 1. 카메라 진단 (처음 한 번만)
 python3 camera_diagnostic.py
 
-# 2. 헤드리스 모드 실행
+# 2. 최적화 버전 실행
+./run_optimized.sh
+
+# 또는 직접 실행
+python3 line_tracer_optimized.py
+```
+
+**최적화 버전의 장점:**
+- ✅ 깔끔한 객체지향 설계
+- ✅ 안정적인 종료 처리
+- ✅ 실시간 통계 (FPS, 주행시간, 갈림길 횟수)
+- ✅ 세션 요약 정보
+- ✅ 더 부드러운 주행
+
+### SSH로 접속했을 때 (기본 버전)
+
+```bash
+# 헤드리스 모드 실행
 ./run_headless.sh
 
 # 또는 직접 실행
 python3 dual_roi_line_tracer_headless.py
 ```
 
-### 모니터/VNC 연결했을 때
+### 모니터/VNC 연결했을 때 (GUI 버전)
 
 ```bash
 # GUI 버전 실행
@@ -90,15 +109,18 @@ sudo usermod -a -G gpio $USER
 # 로그아웃 후 다시 로그인
 ```
 
-## 📊 모드 비교
+## 📊 버전 비교
 
-| 기능 | GUI 모드 | 헤드리스 모드 |
-|------|----------|---------------|
-| 실행 환경 | 모니터/VNC 필요 | SSH만으로 가능 ✅ |
-| 화면 표시 | OpenCV 창 표시 | 콘솔 출력만 |
-| 갈림길 제어 | 키보드 입력 | 자동 선택 |
-| 디버깅 | 시각적 피드백 | 텍스트 로그 |
-| GPIO 사용 | 선택적 | 자동 활성화 |
+| 기능 | 최적화 버전 🌟 | 헤드리스 버전 | GUI 버전 |
+|------|---------------|--------------|----------|
+| 실행 환경 | SSH ✅ | SSH ✅ | 모니터/VNC |
+| 화면 표시 | 콘솔 (통계) | 콘솔 (기본) | OpenCV 창 |
+| 갈림길 제어 | 자동 (우선순위) | 자동 (직진) | 키보드 입력 |
+| 코드 구조 | 객체지향 ✅ | 절차적 | 절차적 |
+| 통계 출력 | FPS/시간/갈림길 ✅ | 5초마다 | - |
+| 종료 처리 | 안정적 ✅ | 안정적 ✅ | 기본 |
+| 세션 요약 | ✅ | - | - |
+| 추천 용도 | **일반 주행** | 디버깅 | 파라미터 조정 |
 
 ## 🐛 문제 해결
 

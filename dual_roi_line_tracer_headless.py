@@ -386,7 +386,12 @@ def main():
         motor_stop()
         cap.release()
         if USE_GPIO:
-            GPIO.cleanup()
+            try:
+                pwmA.stop()
+                pwmB.stop()
+                GPIO.cleanup()
+            except:
+                pass
         print("[INFO] Program terminated")
 
 
