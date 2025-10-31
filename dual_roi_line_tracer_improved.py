@@ -1,9 +1,11 @@
 """
 Improved Dual ROI Line Tracer - 노란색 라인 전용
 트랙을 벗어나지 않고 노란색 라인을 따라가는 개선된 로직
++ 갈림길 감지 및 키보드 제어 기능
 """
 import cv2
 import numpy as np
+import time
 
 USE_GPIO = False  # 실제 연결시 True
 if USE_GPIO:
@@ -129,12 +131,60 @@ def detect_yellow_line(roi, lower_yellow, upper_yellow, min_pixels=100):
     return has_line, line_pixels, mask
 
 
+def detect_junction(left_has_line, center_has_line, right_has_line,
+                   left_pixels, center_pixels, right_pixels,
+                   junction_threshold=200):
+    """
+    갈림길 감지 함수
+
+    Args:
+        left_has_line, center_has_line, right_has_line: 각 ROI의 라인 감지 여부
+        left_pixels, center_pixels, right_pixels: 각 ROI의 라인 픽셀 수
+        junction_threshold: 갈림길로 판단할 최소 픽셀 수
+
+    Returns:
+        junction_type: "none", "left_right", "left_center", "right_center", "all"
+        available_directions: 가능한 방향 리스트
+    """
+    # 갈림길 타입 판단
+    junction_type = "none"
+    available_directions = []
+
+    # 좌우 양쪽 모두 라인이 있고, 충분한 픽셀 수가 있으면
+    if left_has_line and right_has_line and \
+       left_pixels >= junction_threshold and right_pixels >= junction_threshold:
+
+        if center_has_line and center_pixels >= junction_threshold:
+            # 좌/중앙/우 모두 라인 있음 → T자 또는 십자 갈림길
+            junction_type = "all"
+            available_directions = ["left", "forward", "right"]
+        else:
+            # 좌/우만 라인 있음 → 좌우 갈림길
+            junction_type = "left_right"
+            available_directions = ["left", "right"]
+
+    # 좌측과 중앙만 라인이 있는 경우
+    elif left_has_line and center_has_line and not right_has_line and \
+         left_pixels >= junction_threshold and center_pixels >= junction_threshold:
+        junction_type = "left_center"
+        available_directions = ["left", "forward"]
+
+    # 우측과 중앙만 라인이 있는 경우
+    elif right_has_line and center_has_line and not left_has_line and \
+         right_pixels >= junction_threshold and center_pixels >= junction_threshold:
+        junction_type = "right_center"
+        available_directions = ["right", "forward"]
+
+    return junction_type, available_directions
+
+
 def decide_command_improved(frame, roi_height_ratio=0.4, roi_width_ratio=0.35,
                            lower_yellow=np.array([20, 100, 100]),
                            upper_yellow=np.array([30, 255, 255]),
-                           min_pixels=150):
+                           min_pixels=150,
+                           junction_threshold=200):
     """
-    개선된 제어 로직 - 노란색 라인을 벗어나지 않고 따라가기
+    개선된 제어 로직 - 노란색 라인을 벗어나지 않고 따라가기 + 갈림길 감지
 
     Args:
         frame: 입력 프레임
@@ -143,9 +193,10 @@ def decide_command_improved(frame, roi_height_ratio=0.4, roi_width_ratio=0.35,
         lower_yellow: 노란색 하한값
         upper_yellow: 노란색 상한값
         min_pixels: 최소 픽셀 수
+        junction_threshold: 갈림길 판단 임계값
 
     Returns:
-        command, debug_info
+        command, debug_info, junction_info
     """
     h, w = frame.shape[:2]
 
@@ -172,10 +223,26 @@ def decide_command_improved(frame, roi_height_ratio=0.4, roi_width_ratio=0.35,
         right_roi, lower_yellow, upper_yellow, min_pixels
     )
 
-    # 개선된 제어 로직
-    # 우선순위: 중앙 라인 > 좌우 균형 > 한쪽만 있을 때 복귀
+    # 갈림길 감지
+    junction_type, available_directions = detect_junction(
+        left_has_line, center_has_line, right_has_line,
+        left_pixels, center_pixels, right_pixels,
+        junction_threshold
+    )
 
-    if center_has_line:
+    # 갈림길 정보
+    junction_info = {
+        "is_junction": junction_type != "none",
+        "junction_type": junction_type,
+        "available_directions": available_directions
+    }
+
+    # 갈림길이면 정지
+    if junction_info["is_junction"]:
+        command = "junction"
+
+    # 개선된 제어 로직 (갈림길 아닐 때)
+    elif center_has_line:
         # 중앙에 라인이 있으면 직진 (트랙 중앙 유지)
         command = "forward"
 
@@ -219,12 +286,27 @@ def decide_command_improved(frame, roi_height_ratio=0.4, roi_width_ratio=0.35,
         }
     }
 
-    return command, left_binary, center_binary, right_binary, debug_info
+    return command, left_binary, center_binary, right_binary, debug_info, junction_info
+
+
+def motor_backward(speed=60):
+    """후진"""
+    if USE_GPIO:
+        GPIO.output(IN1, False)
+        GPIO.output(IN2, True)
+        GPIO.output(IN3, False)
+        GPIO.output(IN4, True)
+        pwmA.ChangeDutyCycle(speed)
+        pwmB.ChangeDutyCycle(speed)
+    else:
+        print(f"[MOTOR] BACKWARD speed={speed}")
 
 
 def draw_debug_overlay_improved(frame, debug_info, command,
-                               left_binary, center_binary, right_binary):
-    """개선된 디버그 오버레이"""
+                               left_binary, center_binary, right_binary,
+                               search_count=0, rotation_angle=0,
+                               junction_info=None):
+    """개선된 디버그 오버레이 (갈림길 정보 포함)"""
 
     # ROI 좌표
     left_coords = debug_info["roi_coords"]["left"]
@@ -262,10 +344,33 @@ def draw_debug_overlay_improved(frame, debug_info, command,
 
     # 텍스트 정보
     y_offset = 30
-    # 명령어 표시
-    command_text = command.upper().replace("_", " ")
-    cv2.putText(frame, f"Command: {command_text}", (10, y_offset),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
+    # 갈림길 정보 표시
+    if junction_info and junction_info["is_junction"]:
+        junction_color = (255, 0, 255)  # 마젠타
+        cv2.putText(frame, f"JUNCTION DETECTED!", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, junction_color, 3)
+        y_offset += 35
+
+        directions_text = " | ".join(junction_info["available_directions"])
+        cv2.putText(frame, f"Available: {directions_text}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, junction_color, 2)
+        y_offset += 30
+        cv2.putText(frame, f"Press Arrow Keys to Choose Direction", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+    # 명령어 표시 (검색 모드일 때 특별 표시)
+    elif command == "search":
+        command_color = (0, 165, 255)  # 주황색
+        cv2.putText(frame, f"SEARCHING LINE...", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, command_color, 2)
+        y_offset += 30
+        cv2.putText(frame, f"Rotation: ~{rotation_angle}deg", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, command_color, 2)
+    else:
+        command_text = command.upper().replace("_", " ")
+        cv2.putText(frame, f"Command: {command_text}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
     y_offset += 30
     cv2.putText(frame, f"Left: {debug_info['left_pixels']}px", (10, y_offset),
@@ -285,12 +390,14 @@ def draw_debug_overlay_improved(frame, debug_info, command,
 def main():
     """메인 루프"""
     cap = open_camera()
-    print("[INFO] Improved Dual ROI Line Tracer - 노란색 라인 전용")
+    print("[INFO] Improved Dual ROI Line Tracer - 노란색 라인 전용 + 갈림길 감지")
     print("[INFO] q/ESC: 종료")
+    print("[INFO] Arrow Keys: 갈림길에서 방향 선택 (↑↓←→)")
     print("[INFO] 1/2: H_min 조정 (노란색 범위)")
     print("[INFO] 3/4: H_max 조정")
     print("[INFO] 5/6: S_min 조정 (채도)")
     print("[INFO] 7/8: 최소 픽셀 수 조정")
+    print("[INFO] 9/0: 갈림길 임계값 조정")
     print("[INFO] s: 현재 설정 출력")
 
     # 초기 파라미터 (노란색 라인용)
@@ -298,12 +405,27 @@ def main():
     s_min, s_max = 100, 255
     v_min, v_max = 100, 255
     min_pixels = 150
+    junction_threshold = 200
     roi_height_ratio = 0.4
     roi_width_ratio = 0.35
 
     # 라인 검색 모드 변수
     search_direction = "right"  # 라인 없을 때 회전 방향
     search_count = 0
+    last_seen_direction = "center"  # 마지막으로 라인이 보인 방향
+    rotation_angle = 0  # 현재 회전 각도 (추정)
+    max_rotation_angle = 180  # 최대 회전 각도
+
+    # 갈림길 모드 변수
+    at_junction = False
+    junction_start_time = 0
+    selected_direction = None
+
+    # 라인 이탈 감지 변수
+    line_lost_count = 0  # 라인을 못 본 연속 프레임 수
+    line_lost_threshold = 30  # 이탈로 판단할 프레임 수 (약 1초)
+    backing_up = False  # 후진 중 여부
+    backup_count = 0  # 후진 프레임 수
 
     try:
         while True:
@@ -316,51 +438,142 @@ def main():
             upper_yellow = np.array([h_max, s_max, v_max])
 
             # 명령 결정
-            command, left_binary, center_binary, right_binary, debug_info = decide_command_improved(
+            command, left_binary, center_binary, right_binary, debug_info, junction_info = decide_command_improved(
                 frame, roi_height_ratio, roi_width_ratio,
-                lower_yellow, upper_yellow, min_pixels
+                lower_yellow, upper_yellow, min_pixels, junction_threshold
             )
 
+            # 라인 이탈 감지 (검색 모드가 아닐 때만)
+            has_any_line = debug_info["left_has_line"] or debug_info["center_has_line"] or debug_info["right_has_line"]
+
+            if command == "search" and not backing_up:
+                line_lost_count += 1
+                if line_lost_count >= line_lost_threshold:
+                    # 라인 이탈 판정 - 후진 시작
+                    backing_up = True
+                    backup_count = 0
+                    print(f"[WARNING] Line lost! Starting backup...")
+            else:
+                # 라인을 찾았거나 갈림길이면 카운터 리셋
+                line_lost_count = 0
+
             # 모터 제어
-            if command == "forward":
+            if backing_up:
+                # 후진 모드
+                backup_count += 1
+                motor_backward(60)
+                print(f"[BACKUP] Backing up... ({backup_count}/60)")
+
+                if backup_count >= 60:  # 약 2초 후진
+                    backing_up = False
+                    backup_count = 0
+                    line_lost_count = 0
+                    search_count = 0
+                    print("[BACKUP] Backup complete. Resuming search...")
+
+            elif command == "junction":
+                # 갈림길 감지 - 정지 후 키보드 입력 대기
+                motor_stop()
+
+                if not at_junction:
+                    at_junction = True
+                    junction_start_time = time.time()
+                    print(f"[JUNCTION] Junction detected! Available: {junction_info['available_directions']}")
+                    print("[JUNCTION] Press Arrow Keys: ← (left), ↑ (forward), → (right)")
+
+                # 갈림길에서 대기 중 - 키보드 입력은 아래에서 처리
+
+            elif command == "forward":
                 motor_forward(65)
                 search_count = 0
+                rotation_angle = 0
+                last_seen_direction = "center"
+                at_junction = False
 
             elif command == "slight_left":
                 # 미세 좌회전
                 motor_left(40)
                 search_count = 0
+                rotation_angle = 0
+                last_seen_direction = "center"
+                at_junction = False
 
             elif command == "slight_right":
                 # 미세 우회전
                 motor_right(40)
                 search_count = 0
+                rotation_angle = 0
+                last_seen_direction = "center"
+                at_junction = False
 
             elif command == "left":
                 motor_left(50)
                 search_direction = "left"
                 search_count = 0
+                rotation_angle = 0
+                last_seen_direction = "left"
+                at_junction = False
 
             elif command == "right":
                 motor_right(50)
                 search_direction = "right"
                 search_count = 0
+                rotation_angle = 0
+                last_seen_direction = "right"
+                at_junction = False
 
             elif command == "search":
-                # 라인 찾기 모드
+                # 개선된 라인 찾기 모드
                 search_count += 1
-                if search_count < 10:
-                    motor_stop()  # 잠시 정지
-                elif search_count < 50:
-                    # 마지막 방향으로 천천히 회전
-                    if search_direction == "left":
-                        motor_left(35)
+
+                if search_count < 5:
+                    # 1단계: 정지하고 주변 확인
+                    motor_stop()
+                    print(f"[SEARCH] 정지 중... ({search_count}/5)")
+
+                elif search_count < 60:
+                    # 2단계: 마지막 본 방향으로 제자리 회전
+                    rotation_angle += 3  # 약 3도씩 회전 (추정)
+
+                    # 마지막에 본 방향의 반대편으로 먼저 회전
+                    if last_seen_direction == "left":
+                        motor_right(40)  # 우회전
+                        print(f"[SEARCH] 우회전 검색 중... (각도: ~{rotation_angle}°)")
+                    elif last_seen_direction == "right":
+                        motor_left(40)   # 좌회전
+                        print(f"[SEARCH] 좌회전 검색 중... (각도: ~{rotation_angle}°)")
+                    else:  # center 또는 기타
+                        # 기본적으로 우회전
+                        motor_right(40)
+                        print(f"[SEARCH] 우회전 검색 중... (각도: ~{rotation_angle}°)")
+
+                elif search_count < 120:
+                    # 3단계: 반대 방향으로 회전
+                    rotation_angle += 3
+
+                    if last_seen_direction == "left":
+                        motor_left(40)   # 좌회전
+                        print(f"[SEARCH] 반대 방향(좌) 검색 중... (각도: ~{rotation_angle}°)")
+                    elif last_seen_direction == "right":
+                        motor_right(40)  # 우회전
+                        print(f"[SEARCH] 반대 방향(우) 검색 중... (각도: ~{rotation_angle}°)")
                     else:
-                        motor_right(35)
+                        motor_left(40)
+                        print(f"[SEARCH] 반대 방향(좌) 검색 중... (각도: ~{rotation_angle}°)")
+
+                elif search_count < 180:
+                    # 4단계: 360도 완전 회전
+                    rotation_angle += 3
+                    motor_right(35)
+                    print(f"[SEARCH] 360도 회전 검색 중... (각도: ~{rotation_angle}°)")
+
                 else:
-                    # 너무 오래 못 찾으면 반대 방향 시도
-                    search_direction = "left" if search_direction == "right" else "right"
-                    search_count = 10
+                    # 5단계: 라인을 찾지 못함 - 정지
+                    motor_stop()
+                    print("[SEARCH] 라인을 찾지 못했습니다. 정지합니다.")
+                    if search_count >= 300:  # 5초 정도 정지 후 재시도
+                        search_count = 0
+                        rotation_angle = 0
 
             else:
                 motor_stop()
@@ -368,7 +581,8 @@ def main():
             # 디버그 오버레이
             frame = draw_debug_overlay_improved(
                 frame, debug_info, command,
-                left_binary, center_binary, right_binary
+                left_binary, center_binary, right_binary,
+                search_count, rotation_angle, junction_info
             )
 
             # 화면 출력
@@ -379,6 +593,40 @@ def main():
 
             # 키 입력 처리
             key = cv2.waitKey(1) & 0xFF
+
+            # 갈림길에서 방향키 입력 처리
+            if at_junction and key != 255:
+                if key == 82 or key == ord('w'):  # 위쪽 화살표 또는 'w' (forward)
+                    if "forward" in junction_info["available_directions"]:
+                        print("[JUNCTION] Selected: FORWARD")
+                        selected_direction = "forward"
+                        motor_forward(65)
+                        time.sleep(1.0)  # 1초 동안 직진
+                        at_junction = False
+                    else:
+                        print("[JUNCTION] Forward not available!")
+
+                elif key == 81 or key == ord('a'):  # 왼쪽 화살표 또는 'a' (left)
+                    if "left" in junction_info["available_directions"]:
+                        print("[JUNCTION] Selected: LEFT")
+                        selected_direction = "left"
+                        motor_left(50)
+                        time.sleep(0.8)  # 0.8초 동안 좌회전
+                        at_junction = False
+                    else:
+                        print("[JUNCTION] Left not available!")
+
+                elif key == 83 or key == ord('d'):  # 오른쪽 화살표 또는 'd' (right)
+                    if "right" in junction_info["available_directions"]:
+                        print("[JUNCTION] Selected: RIGHT")
+                        selected_direction = "right"
+                        motor_right(50)
+                        time.sleep(0.8)  # 0.8초 동안 우회전
+                        at_junction = False
+                    else:
+                        print("[JUNCTION] Right not available!")
+
+            # 일반 키 입력 처리
             if key in (27, ord('q')):
                 motor_stop()
                 break
@@ -406,11 +654,18 @@ def main():
             elif key == ord('8'):
                 min_pixels += 50
                 print(f"[PARAM] min_pixels: {min_pixels}")
+            elif key == ord('9'):
+                junction_threshold = max(100, junction_threshold - 50)
+                print(f"[PARAM] junction_threshold: {junction_threshold}")
+            elif key == ord('0'):
+                junction_threshold += 50
+                print(f"[PARAM] junction_threshold: {junction_threshold}")
             elif key == ord('s'):
                 print(f"\n=== 현재 설정 ===")
                 print(f"lower_yellow = np.array([{h_min}, {s_min}, {v_min}])")
                 print(f"upper_yellow = np.array([{h_max}, {s_max}, {v_max}])")
                 print(f"min_pixels = {min_pixels}")
+                print(f"junction_threshold = {junction_threshold}")
                 print(f"==================\n")
 
     finally:
