@@ -74,15 +74,21 @@ def motor_stop():
 
 
 def open_camera():
-    """카메라 열기"""
-    cap = cv2.VideoCapture(0)
-    if cap.isOpened():
-        return cap
+    """카메라 열기 - 라즈베리파이 카메라 우선"""
+    # 방법 1: Picamera2 먼저 시도 (라즈베리파이 카메라)
     try:
         from picamera2 import Picamera2
+        print("[INFO] Trying Picamera2...")
         picam2 = Picamera2()
-        picam2.configure(picam2.create_preview_configuration(main={"format": "RGB888"}))
+
+        # 해상도를 낮춰서 메모리 부담 감소
+        config = picam2.create_preview_configuration(
+            main={"format": "RGB888", "size": (640, 480)}
+        )
+        picam2.configure(config)
         picam2.start()
+
+        print("[INFO] Picamera2 initialized successfully!")
 
         class PicamWrap:
             def read(self):
@@ -95,7 +101,45 @@ def open_camera():
 
         return PicamWrap()
     except Exception as e:
-        raise RuntimeError("Camera open failed: " + str(e))
+        print(f"[WARN] Picamera2 failed: {e}")
+
+    # 방법 2: OpenCV VideoCapture 시도 (USB 카메라)
+    try:
+        print("[INFO] Trying OpenCV VideoCapture...")
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)  # V4L2 백엔드 명시
+
+        # 해상도 설정
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+
+        # 버퍼 크기 줄이기
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        if cap.isOpened():
+            print("[INFO] OpenCV VideoCapture initialized successfully!")
+            return cap
+        else:
+            cap.release()
+    except Exception as e:
+        print(f"[WARN] OpenCV VideoCapture failed: {e}")
+
+    # 방법 3: GStreamer 파이프라인 시도
+    try:
+        print("[INFO] Trying GStreamer pipeline...")
+        gst_pipeline = (
+            "v4l2src device=/dev/video0 ! "
+            "video/x-raw,width=640,height=480,framerate=30/1 ! "
+            "videoconvert ! appsink"
+        )
+        cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            print("[INFO] GStreamer pipeline initialized successfully!")
+            return cap
+    except Exception as e:
+        print(f"[WARN] GStreamer failed: {e}")
+
+    raise RuntimeError("All camera initialization methods failed. Please check camera connection.")
 
 
 def detect_yellow_line(roi, lower_yellow, upper_yellow, min_pixels=100):
