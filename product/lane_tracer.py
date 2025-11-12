@@ -52,14 +52,12 @@ except Exception:
 # 속도 프로파일 (단순화 버전과 동일)
 SPEED_FORWARD_DEFAULT = 0.75  # 기본 직진 속도
 SPEED_TURN_DEFAULT = 0.55     # 기본 회전 속도
-SPEED_SPIN_DEFAULT = 0.70     # 제자리 회전 속도
 SPEED_SLOW_FORWARD = 0.25     # 감속 직진
 SPEED_SLOW_TURN = 0.20         # 감속 회전
 
 # 현재 속도 (동적 변경용)
 SPEED_FORWARD = SPEED_FORWARD_DEFAULT
 SPEED_TURN = SPEED_TURN_DEFAULT
-SPEED_SPIN = SPEED_SPIN_DEFAULT
 
 # ============================================================
 # 모터 제어 함수
@@ -75,43 +73,47 @@ def motor_forward():
 
 def motor_left(intensity=1.0):
     """좌회전 - intensity로 회전 강도 조절 (0.0~1.0)"""
-    left_ratio = 0.25 * intensity
-    right_ratio = 1.0 * intensity
-    AIN1.value = 0
-    AIN2.value = 1
-    PWMA.value = SPEED_TURN * left_ratio
-    BIN1.value = 0
-    BIN2.value = 1
-    PWMB.value = SPEED_TURN * right_ratio
+    # 급격한 회전: 안쪽 바퀴를 후진시킴 (intensity > 0.7일 때)
+    if intensity > 0.7:
+        # 제자리 회전에 가까운 동작
+        AIN1.value = 1  # 왼쪽 후진
+        AIN2.value = 0
+        PWMA.value = SPEED_TURN * 0.3 * intensity
+        BIN1.value = 0  # 오른쪽 전진
+        BIN2.value = 1
+        PWMB.value = SPEED_TURN * 1.2 * intensity
+    else:
+        # 일반 회전: 안쪽 바퀴 느리게
+        left_ratio = 0.0  # 안쪽 바퀴 정지
+        right_ratio = 1.2 * intensity  # 바깥쪽 바퀴 더 빠르게
+        AIN1.value = 0
+        AIN2.value = 1
+        PWMA.value = SPEED_TURN * left_ratio
+        BIN1.value = 0
+        BIN2.value = 1
+        PWMB.value = SPEED_TURN * right_ratio
 
 def motor_right(intensity=1.0):
     """우회전 - intensity로 회전 강도 조절 (0.0~1.0)"""
-    left_ratio = 1.0 * intensity
-    right_ratio = 0.25 * intensity
-    AIN1.value = 0
-    AIN2.value = 1
-    PWMA.value = SPEED_TURN * left_ratio
-    BIN1.value = 0
-    BIN2.value = 1
-    PWMB.value = SPEED_TURN * right_ratio
-
-def motor_spin_right():
-    """제자리 우회전 (왼쪽 후진, 오른쪽 전진)"""
-    AIN1.value = 1  # 왼쪽 후진
-    AIN2.value = 0
-    PWMA.value = SPEED_SPIN
-    BIN1.value = 0  # 오른쪽 전진
-    BIN2.value = 1
-    PWMB.value = SPEED_SPIN
-
-def motor_spin_left():
-    """제자리 좌회전 (왼쪽 전진, 오른쪽 후진)"""
-    AIN1.value = 0  # 왼쪽 전진
-    AIN2.value = 1
-    PWMA.value = SPEED_SPIN
-    BIN1.value = 1  # 오른쪽 후진
-    BIN2.value = 0
-    PWMB.value = SPEED_SPIN
+    # 급격한 회전: 안쪽 바퀴를 후진시킴 (intensity > 0.7일 때)
+    if intensity > 0.7:
+        # 제자리 회전에 가까운 동작
+        AIN1.value = 0  # 왼쪽 전진
+        AIN2.value = 1
+        PWMA.value = SPEED_TURN * 1.2 * intensity
+        BIN1.value = 1  # 오른쪽 후진
+        BIN2.value = 0
+        PWMB.value = SPEED_TURN * 0.3 * intensity
+    else:
+        # 일반 회전: 안쪽 바퀴 느리게
+        left_ratio = 1.2 * intensity  # 바깥쪽 바퀴 더 빠르게
+        right_ratio = 0.0  # 안쪽 바퀴 정지
+        AIN1.value = 0
+        AIN2.value = 1
+        PWMA.value = SPEED_TURN * left_ratio
+        BIN1.value = 0
+        BIN2.value = 1
+        PWMB.value = SPEED_TURN * right_ratio
 
 def motor_stop():
     """정지 - 완전한 브레이크 모드"""
@@ -227,37 +229,64 @@ def handle_runtime_triggers(frame_count=0):
         # 객체가 사라지면 알림 플래그 리셋
         try:
             with shared_state.lock:
+                # 저장된 표지판 플래그도 리셋
+                if hasattr(shared_state, 'stop_sign_stored'):
+                    delattr(shared_state, 'stop_sign_stored')
+                if hasattr(shared_state, 'traffic_light_stored'):
+                    delattr(shared_state, 'traffic_light_stored')
+                if hasattr(shared_state, 'slow_mode_active'):
+                    delattr(shared_state, 'slow_mode_active')
+                # 알림 플래그 리셋
                 for attr in dir(shared_state):
                     if attr.endswith('_notified'):
                         delattr(shared_state, attr)
         except:
             pass  # 플래그 리셋 실패는 무시
 
-    # STOP 표지판
+    # STOP 표지판 - 즉시 정지
     if obj_state.get("stop"):
         conf = confidence.get("stop", 0) if confidence else 0
-        print(f"\n{'='*50}")
-        print(f"🛑 [정지 이유: STOP 표지판]")
-        print(f"  └─ 시간: {timestamp}")
-        print(f"  └─ Frame: #{frame_count}")
-        print(f"  └─ 신뢰도: {conf:.2f}" if conf else f"  └─ Frame #{frame_count}")
-        print(f"  └─ 동작: 3초 정지")
-        print(f"{'='*50}\n")
-        motor_stop()
-        time.sleep(3)
-        print(f"  └─ STOP 동작 완료 ({timestamp})")
+
+        # 중복 정지 방지 (3초 쿨다운)
+        try:
+            with shared_state.lock:
+                last_stop_time = getattr(shared_state, 'last_stop_time', 0)
+                current_time = time.time()
+
+                if current_time - last_stop_time > 3.0:  # 3초 쿨다운
+                    print(f"🛑 [STOP 표지판 감지] 즉시 정지!")
+                    print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ Frame #{frame_count}")
+
+                    # 즉시 정지
+                    motor_stop()
+                    print(f"  └─ 정지 중... (2초)")
+                    time.sleep(2.0)  # 2초 정지
+
+                    # 정지 후 천천히 출발
+                    print(f"  └─ 천천히 출발")
+                    motor_forward(SPEED_SLOW_FORWARD)
+                    time.sleep(0.5)
+
+                    shared_state.last_stop_time = current_time
+        except:
+            pass
         handled = True
 
-    # SLOW 표지판
+    # SLOW 표지판 - 즉시 감속하지만 블로킹하지 않음
     elif obj_state.get("slow"):
         conf = confidence.get("slow", 0) if confidence else 0
-        print(f"⚠️ [객체인식] SLOW 표지판 감지 → 3초 감속")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
-        set_slow_mode()
-        motor_forward()
-        time.sleep(3)
-        restore_speed()
-        print(f"  └─ SLOW 동작 완료 ({timestamp})")
+
+        try:
+            with shared_state.lock:
+                if not getattr(shared_state, 'slow_mode_active', False):
+                    print(f"⚠️ [SLOW 표지판 감지] 감속 모드 전환")
+                    print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
+                    set_slow_mode()
+                    # 3초 후 속도 복구를 위한 타이머 설정 (블로킹하지 않음)
+                    shared_state.slow_mode_until = time.time() + 3.0
+                    shared_state.slow_mode_active = True
+        except:
+            pass
         handled = True
 
     # HORN 표지판
@@ -269,26 +298,50 @@ def handle_runtime_triggers(frame_count=0):
         print(f"  └─ HORN 동작 완료 ({timestamp})")
         handled = True
 
-    # 신호등 (traffic)
+    # 신호등 - 즉시 정지 후 안전 확인 후 우회전
     elif obj_state.get("traffic"):
         conf = confidence.get("traffic", 0) if confidence else 0
-        print(f"\n{'='*50}")
-        print(f"🚦 [정지 이유: 신호등]")
-        print(f"  └─ 시간: {timestamp}")
-        print(f"  └─ Frame: #{frame_count}")
-        print(f"  └─ 신뢰도: {conf:.2f}" if conf else f"  └─ Frame #{frame_count}")
-        print(f"  └─ 동작: 3초 정지 후 우회전")
-        print(f"{'='*50}\n")
-        motor_stop()
-        time.sleep(3)
-        motor_right()
-        time.sleep(0.8)
-        motor_forward()
-        time.sleep(0.5)
-        with shared_state.lock:
-            shared_state.right_turn_done = True
-        print(f"  └─ 신호등 우회전 완료 ({timestamp})")
+
+        try:
+            with shared_state.lock:
+                last_traffic_time = getattr(shared_state, 'last_traffic_time', 0)
+                current_time = time.time()
+
+                if current_time - last_traffic_time > 5.0:  # 5초 쿨다운
+                    print(f"🚦 [신호등 감지] 정지 후 안전 확인")
+                    print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
+
+                    # 즉시 정지
+                    motor_stop()
+                    print(f"  └─ 신호 대기 중... (3초)")
+                    time.sleep(3.0)  # 3초 대기
+
+                    # 우회전 (신호등에서는 보통 우회전)
+                    print(f"  └─ 안전 확인 후 우회전")
+                    motor_right(0.8)
+                    time.sleep(1.0)  # 1초 우회전
+
+                    # 천천히 직진
+                    print(f"  └─ 우회전 완료, 천천히 출발")
+                    motor_forward(SPEED_SLOW_FORWARD)
+                    time.sleep(0.5)
+
+                    shared_state.last_traffic_time = current_time
+        except:
+            pass
         handled = True
+
+    # SLOW 모드 자동 해제 체크 (비블로킹 처리)
+    try:
+        with shared_state.lock:
+            if hasattr(shared_state, 'slow_mode_until'):
+                if time.time() > shared_state.slow_mode_until:
+                    restore_speed()
+                    delattr(shared_state, 'slow_mode_until')
+                    shared_state.slow_mode_active = False
+                    print(f"  └─ SLOW 모드 자동 해제 ({timestamp})")
+    except:
+        pass
 
     if handled:
         with shared_state.lock:
@@ -449,24 +502,39 @@ def execute_stored_sign():
         motor_forward()
         time.sleep(0.5)  # 코너 접근
         motor_left(1.0)
-        time.sleep(1.5)  # 회전 시간
+        time.sleep(1.0)  # 회전 시간 (1초로 통일)
         motor_forward()
         time.sleep(0.5)  # 라인 복귀
         print(f"  └─ 좌회전 완료")
         return True
 
     elif sign_type == "turn_right":
-        print(f"➡️ 우회전 표지판 → 우회전 실행")
+        reason = sign_info.get('reason', '')
+        if reason == 'traffic_light':
+            print(f"🚦 신호등 → 우회전 실행")
+        else:
+            print(f"➡️ 우회전 표지판 → 우회전 실행")
         print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
         motor_stop()
         time.sleep(0.5)
         motor_forward()
         time.sleep(0.5)  # 코너 접근
         motor_right(1.0)
-        time.sleep(1.5)  # 회전 시간
+        time.sleep(1.0)  # 회전 시간 (1초로 통일)
         motor_forward()
         time.sleep(0.5)  # 라인 복귀
         print(f"  └─ 우회전 완료")
+        return True
+
+    elif sign_type == "stop":
+        print(f"🛑 STOP 표지판 → 정지 실행")
+        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
+        motor_stop()
+        print(f"  └─ 3초 정지...")
+        time.sleep(3)
+        motor_forward()
+        time.sleep(0.5)  # 라인 복귀
+        print(f"  └─ STOP 완료, 주행 재개")
         return True
 
     return False
@@ -562,18 +630,13 @@ def lane_follow_loop():
     PIXEL_THRESHOLD = 800  # 라인 감지 임계값 (더 민감하게 조정)
     CENTER_THRESHOLD = 5000  # 교차로 감지 임계값 (고정)
 
-    # 회전 강도 임계값
-    TURN_THRESHOLD_STRONG = 0.6   # 강한 회전
-    TURN_THRESHOLD_MEDIUM = 0.4   # 중간 회전
+    # 균형 판단 임계값
     BALANCE_THRESHOLD = 0.15      # 균형 판단 (더 민감하게)
 
     # 스무딩 파라미터 (부드러운 주행용)
     SMOOTHING_FACTOR = 0.6        # 이전 상태 가중치 (0.0 ~ 1.0)
     prev_action = "FORWARD"       # 이전 동작 저장
     prev_intensity = 0.0          # 이전 회전 강도
-
-    # 라인 탐색 방향 (라인을 잃었을 때 마지막으로 본 방향)
-    # last_seen_side = None  # 현재 미사용
 
     # 교차로 모드 관련 변수
     intersection_mode = False
@@ -759,21 +822,21 @@ def lane_follow_loop():
                         intersection_exit_time = time.time()
                         vehicle_stopped = False
                     elif user_input == 'a':
-                        print("  → 좌회전 선택 (직진 0.5초 후 회전 1.2초)")
+                        print("  → 좌회전 선택 (직진 0.5초 후 회전 1초)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_left(1.0)
-                        time.sleep(1.2)  # 회전 시간 (기존보다 길게)
+                        time.sleep(1.0)  # 회전 시간 (1초로 통일)
                         action = "LEFT"
                         intersection_mode = False
                         intersection_exit_time = time.time()
                         vehicle_stopped = False
                     elif user_input == 'd':
-                        print("  → 우회전 선택 (직진 0.5초 후 회전 1.2초)")
+                        print("  → 우회전 선택 (직진 0.5초 후 회전 1초)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_right(1.0)
-                        time.sleep(1.2)  # 회전 시간 (기존보다 길게)
+                        time.sleep(1.0)  # 회전 시간 (1초로 통일)
                         action = "RIGHT"
                         intersection_mode = False
                         intersection_exit_time = time.time()
@@ -842,18 +905,18 @@ def lane_follow_loop():
                         action = "FORWARD"
                         print("  → 직진 실행")
                     elif user_input == 'a':
-                        print("  → 좌회전 실행 (직진 0.5초 후 회전 1.2초)")
+                        print("  → 좌회전 실행 (직진 0.5초 후 회전 1초)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_left(1.0)
-                        time.sleep(1.2)  # 회전 시간 (기존보다 길게)
+                        time.sleep(1.0)  # 회전 시간 (1초로 통일)
                         action = "LEFT"
                     elif user_input == 'd':
-                        print("  → 우회전 실행 (직진 0.5초 후 회전 1.2초)")
+                        print("  → 우회전 실행 (직진 0.5초 후 회전 1초)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_right(1.0)
-                        time.sleep(1.2)  # 회전 시간 (기존보다 길게)
+                        time.sleep(1.0)  # 회전 시간 (1초로 통일)
                         action = "RIGHT"
                     elif user_input == 's':
                         motor_stop()
