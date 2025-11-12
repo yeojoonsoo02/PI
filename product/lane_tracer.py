@@ -14,6 +14,7 @@ import time
 import sys
 import select
 from gpiozero import DigitalOutputDevice, PWMOutputDevice
+from collections import deque
 
 # shared_state import 시도
 try:
@@ -22,6 +23,13 @@ try:
 except ImportError:
     OBJECT_DETECTION_ENABLED = False
     print("[WARNING] shared_state not found. Object detection disabled.")
+
+# ============================================================
+# 표지판 인식 큐 시스템
+# ============================================================
+recognized_signs = deque(maxlen=5)  # 최근 5개 표지판만 저장
+last_sign_time = 0  # 마지막 표지판 인식 시간
+SIGN_COOLDOWN = 3.0  # 동일 표지판 재인식 방지 시간 (초)
 
 # ============================================================
 # 모터 / 부저 설정
@@ -280,75 +288,12 @@ def handle_runtime_triggers(frame_count=0):
     return handled
 
 def try_branch_by_trigger(frame_count=0):
-    """교차로에서 방향 표지판 처리"""
-    if not OBJECT_DETECTION_ENABLED:
-        return False
-
-    timestamp = time.strftime("%H:%M:%S")
-    acted = False
-
-    with shared_state.lock:
-        obj_state = shared_state.object_state.copy()
-        # 신뢰도 정보가 있으면 가져오기
-        confidence = getattr(shared_state, 'confidence', {})
-
-    # 감지된 방향 표지판 로깅
-    direction_signs = ["go_straight", "turn_left", "turn_right"]
-    detected_signs = [sign for sign in direction_signs if obj_state.get(sign)]
-
-    if detected_signs:
-        conf_str = ""
-        if confidence:
-            conf_values = [f"{sign}:{confidence.get(sign, 0):.2f}" for sign in detected_signs if sign in confidence]
-            if conf_values:
-                conf_str = f" [신뢰도: {', '.join(conf_values)}]"
-        print(f"  [교차로 객체탐지] {timestamp} F#{frame_count} | 방향 표지판: {', '.join(detected_signs)}{conf_str}")
-
-    # 직진 표지판
-    if obj_state.get("go_straight"):
-        conf = confidence.get("go_straight", 0) if confidence else 0
-        print(f"⬆️ [객체인식] 직진 표지판 감지 → 직진 실행")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
-        motor_stop()
-        time.sleep(1)
-        motor_forward()
-        time.sleep(1.5)
-        print(f"  └─ 직진 완료 ({timestamp})")
-        acted = True
-
-    # 좌회전 표지판
-    elif obj_state.get("turn_left"):
-        conf = confidence.get("turn_left", 0) if confidence else 0
-        print(f"⬅️ [객체인식] 좌회전 표지판 감지 → 좌회전 실행")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(0.5)     # 코너 접근
-        motor_left()
-        time.sleep(1.5)     # 회전 시간 늘림 (1.0 → 1.5)
-        motor_forward()
-        time.sleep(0.5)     # 라인 복귀
-        print(f"  └─ 좌회전 완료 ({timestamp})")
-        acted = True
-
-    # 우회전 표지판
-    elif obj_state.get("turn_right"):
-        conf = confidence.get("turn_right", 0) if confidence else 0
-        print(f"➡️ [객체인식] 우회전 표지판 감지 → 우회전 실행")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(0.5)     # 코너 접근
-        motor_right()
-        time.sleep(1.5)     # 회전 시간 늘림 (1.0 → 1.5)
-        motor_forward()
-        time.sleep(0.5)     # 라인 복귀
-        print(f"  └─ 우회전 완료 ({timestamp})")
-        acted = True
-
-    return acted
+    """교차로에서 저장된 방향 표지판 실행"""
+    # 저장된 표지판이 있으면 실행
+    if execute_stored_sign():
+        print(f"  [교차로] 저장된 표지판 실행 완료")
+        return True
+    return False
 
 # ============================================================
 # 카메라 초기화
@@ -410,6 +355,111 @@ def init_camera():
                     print("   python " + sys.argv[0])
 
     return None
+
+# ============================================================
+# 표지판 관리 함수
+# ============================================================
+def store_direction_signs(frame_count=0):
+    """방향 표지판을 인식하여 큐에 저장만 함"""
+    if not OBJECT_DETECTION_ENABLED:
+        return
+
+    global last_sign_time
+    current_time = time.time()
+
+    # 쿨다운 체크
+    if current_time - last_sign_time < SIGN_COOLDOWN:
+        return
+
+    with shared_state.lock:
+        obj_state = shared_state.object_state.copy()
+        confidence = getattr(shared_state, 'confidence', {})
+
+    timestamp = time.strftime("%H:%M:%S")
+    direction_signs = ["go_straight", "turn_left", "turn_right"]
+
+    for sign in direction_signs:
+        if obj_state.get(sign):
+            conf = confidence.get(sign, 0) if confidence else 0
+            sign_info = {
+                'type': sign,
+                'confidence': conf,
+                'time': current_time,
+                'timestamp': timestamp,
+                'frame': frame_count
+            }
+
+            # 큐에 저장 (중복 방지)
+            if not recognized_signs or recognized_signs[-1]['type'] != sign:
+                recognized_signs.append(sign_info)
+                last_sign_time = current_time
+
+                # 인식 로그만 출력
+                if sign == "go_straight":
+                    print(f"⬆️ [표지판 인식] 직진 표지판 감지 (저장됨)")
+                elif sign == "turn_left":
+                    print(f"⬅️ [표지판 인식] 좌회전 표지판 감지 (저장됨)")
+                elif sign == "turn_right":
+                    print(f"➡️ [표지판 인식] 우회전 표지판 감지 (저장됨)")
+
+                print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}")
+                print(f"  └─ 큐에 {len(recognized_signs)}개 표지판 저장됨")
+                break  # 한 번에 하나만 저장
+
+def execute_stored_sign():
+    """저장된 표지판을 실행 (교차로나 정지 시)"""
+    if not recognized_signs:
+        return False
+
+    # 가장 최근 표지판 가져오기
+    sign_info = recognized_signs.popleft()
+    sign_type = sign_info['type']
+    timestamp = sign_info['timestamp']
+    conf = sign_info['confidence']
+
+    print(f"\n{'='*50}")
+    print(f"📋 저장된 표지판 실행")
+    print(f"{'='*50}")
+
+    if sign_type == "go_straight":
+        print(f"⬆️ 직진 표지판 → 직진 실행")
+        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
+        motor_stop()
+        time.sleep(0.5)
+        motor_forward()
+        time.sleep(1.5)
+        print(f"  └─ 직진 완료")
+        return True
+
+    elif sign_type == "turn_left":
+        print(f"⬅️ 좌회전 표지판 → 좌회전 실행")
+        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
+        motor_stop()
+        time.sleep(0.5)
+        motor_forward()
+        time.sleep(0.5)  # 코너 접근
+        motor_left(1.0)
+        time.sleep(1.5)  # 회전 시간
+        motor_forward()
+        time.sleep(0.5)  # 라인 복귀
+        print(f"  └─ 좌회전 완료")
+        return True
+
+    elif sign_type == "turn_right":
+        print(f"➡️ 우회전 표지판 → 우회전 실행")
+        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
+        motor_stop()
+        time.sleep(0.5)
+        motor_forward()
+        time.sleep(0.5)  # 코너 접근
+        motor_right(1.0)
+        time.sleep(1.5)  # 회전 시간
+        motor_forward()
+        time.sleep(0.5)  # 라인 복귀
+        print(f"  └─ 우회전 완료")
+        return True
+
+    return False
 
 # ============================================================
 # 균형 바 생성
@@ -564,6 +614,10 @@ def lane_follow_loop():
                     if not vehicle_stopped and frame_count % 30 == 0:
                         print(f"  [객체탐지 오류] Frame #{frame_count} 전송 실패: {e}")
 
+            # ====== 방향 표지판을 큐에 저장 (주행 중에도 계속 인식) ======
+            if OBJECT_DETECTION_ENABLED and frame_count % 5 == 0:
+                store_direction_signs(frame_count)
+
             # ====== 교차로에서만 특별 처리 ======
             if vehicle_stopped and stop_reason == "교차로 대기":
                 # 교차로에서는 라인 인식 건너뛰기
@@ -658,9 +712,9 @@ def lane_follow_loop():
 
             # ====== 교차로 모드에서 키보드 입력 처리 ======
             if intersection_mode:
-                # 먼저 객체 인식 표지판 확인
+                # 먼저 저장된 표지판 확인하여 실행
                 if OBJECT_DETECTION_ENABLED and try_branch_by_trigger(frame_count):
-                    print("  [교차로] 표지판 인식 → 자동 실행")
+                    print("  [교차로] 저장된 표지판 → 자동 실행")
                     intersection_mode = False
                     intersection_exit_time = time.time()
                     line_lost_time = None
