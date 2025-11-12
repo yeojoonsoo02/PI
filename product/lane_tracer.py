@@ -236,8 +236,13 @@ def handle_runtime_triggers(frame_count=0):
     # STOP 표지판
     if obj_state.get("stop"):
         conf = confidence.get("stop", 0) if confidence else 0
-        print(f"🛑 [객체인식] STOP 표지판 감지 → 3초 정지")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
+        print(f"\n{'='*50}")
+        print(f"🛑 [정지 이유: STOP 표지판]")
+        print(f"  └─ 시간: {timestamp}")
+        print(f"  └─ Frame: #{frame_count}")
+        print(f"  └─ 신뢰도: {conf:.2f}" if conf else f"  └─ Frame #{frame_count}")
+        print(f"  └─ 동작: 3초 정지")
+        print(f"{'='*50}\n")
         motor_stop()
         time.sleep(3)
         print(f"  └─ STOP 동작 완료 ({timestamp})")
@@ -267,8 +272,13 @@ def handle_runtime_triggers(frame_count=0):
     # 신호등 (traffic)
     elif obj_state.get("traffic"):
         conf = confidence.get("traffic", 0) if confidence else 0
-        print(f"🚦 [객체인식] 신호등 감지 → 3초 정지 후 우회전")
-        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
+        print(f"\n{'='*50}")
+        print(f"🚦 [정지 이유: 신호등]")
+        print(f"  └─ 시간: {timestamp}")
+        print(f"  └─ Frame: #{frame_count}")
+        print(f"  └─ 신뢰도: {conf:.2f}" if conf else f"  └─ Frame #{frame_count}")
+        print(f"  └─ 동작: 3초 정지 후 우회전")
+        print(f"{'='*50}\n")
         motor_stop()
         time.sleep(3)
         motor_right()
@@ -780,8 +790,22 @@ def lane_follow_loop():
                     action = "INTERSECTION"
                     intersection_mode = True
                     print(f"\n🛑 교차로 감지! 전방:{center_pixels} 좌우:{total_pixels}")
+
+                    # 저장된 표지판 확인
                     if OBJECT_DETECTION_ENABLED:
-                        print("  표지판 인식 대기 중...")
+                        if recognized_signs:
+                            print(f"  📋 저장된 표지판 {len(recognized_signs)}개 확인됨:")
+                            for i, sign in enumerate(recognized_signs):
+                                sign_names = {
+                                    'go_straight': '직진',
+                                    'turn_left': '좌회전',
+                                    'turn_right': '우회전'
+                                }
+                                name = sign_names.get(sign['type'], sign['type'])
+                                print(f"    {i+1}. {name} (신뢰도: {sign['confidence']:.2f})")
+                        else:
+                            print("  ⚠️ 저장된 표지판 없음 - 수동 선택 필요")
+
                     print("  [a] 좌회전 | [d] 우회전 | [w] 직진 | [s] 정지")
                     print("  선택 대기 중...")
 
