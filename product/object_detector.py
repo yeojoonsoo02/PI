@@ -17,34 +17,47 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 모델 파일 경로 - 여러 위치 확인
-def find_model_file(filename):
-    """모델 파일을 여러 위치에서 찾기"""
+def find_model_file():
+    """best.pt 모델 파일을 여러 위치에서 찾기"""
     possible_paths = [
-        os.path.join(BASE_DIR, "models", filename),
-        os.path.join(BASE_DIR, "..", filename),  # 상위 디렉토리
-        os.path.join(BASE_DIR, filename),  # 현재 디렉토리
-        os.path.join("/home/keonha/AI_CAR", filename),  # 절대 경로
-        os.path.join("/home/keonha/AI_CAR/test", filename),
+        # Raspberry Pi 경로들
+        "/home/keonha/AI_CAR/product/best.pt",
+        "/home/keonha/AI_CAR/best.pt",
+        "/home/keonha/best.pt",
+        os.path.join(BASE_DIR, "best.pt"),  # 현재 디렉토리
+        os.path.join(BASE_DIR, "..", "best.pt"),  # 상위 디렉토리
+        os.path.join(BASE_DIR, "models", "best.pt"),
+        "/home/pi/best.pt",  # 기본 pi 사용자 경로
+        "/home/pi/AI_CAR/best.pt",
     ]
 
+    print("  [INFO] YOLO 모델 파일 검색 중...")
     for path in possible_paths:
         if os.path.exists(path):
             print(f"  [✓] 모델 파일 발견: {path}")
             return path
 
-    # best.pt 파일도 시도
-    if "detector" in filename:
-        for path in possible_paths:
-            best_path = path.replace(filename, "best.pt")
-            if os.path.exists(best_path):
-                print(f"  [✓] 대체 모델 파일 발견: {best_path}")
-                return best_path
+    # 현재 디렉토리 내용 확인 (디버깅용)
+    print(f"  [DEBUG] 현재 디렉토리: {BASE_DIR}")
+    print(f"  [DEBUG] 상위 디렉토리: {os.path.dirname(BASE_DIR)}")
 
-    print(f"  [⚠️] 모델 파일을 찾을 수 없음: {filename}")
+    # 상위 디렉토리에서 .pt 파일 찾기
+    parent_dir = os.path.dirname(BASE_DIR)
+    if os.path.exists(parent_dir):
+        pt_files = [f for f in os.listdir(parent_dir) if f.endswith('.pt')]
+        if pt_files:
+            print(f"  [DEBUG] 상위 디렉토리의 .pt 파일들: {pt_files}")
+            for pt_file in pt_files:
+                full_path = os.path.join(parent_dir, pt_file)
+                print(f"  [✓] 대체 모델 파일 발견: {full_path}")
+                return full_path
+
+    print(f"  [⚠️] best.pt 모델 파일을 찾을 수 없음")
     return None
 
-DETECTOR_PATH = find_model_file("sign_traffic_detector.pt")
-CLASSIFIER_PATH = find_model_file("sign_traffic_classifier.pt")
+# 단일 모델만 사용 (best.pt)
+DETECTOR_PATH = find_model_file()
+CLASSIFIER_PATH = None  # Classifier는 사용하지 않음
 
 MIN_AREA = 5000        # 너무 작은 객체 제외
 NEAR_AREA = 20000      # 근접 판단 기준
@@ -59,30 +72,39 @@ def object_detect_loop():
 
     # 모델 파일 확인
     if not DETECTOR_PATH:
-        print("  [❌] Detector 모델 파일이 없습니다!")
+        print("  [❌] YOLO 모델 파일 (best.pt)이 없습니다!")
         print("  [INFO] best.pt 파일을 다음 위치 중 하나에 배치하세요:")
+        print("        - /home/keonha/AI_CAR/product/best.pt")
         print("        - /home/keonha/AI_CAR/best.pt")
-        print("        - /home/keonha/AI_CAR/test/best.pt")
+        print("        - /home/pi/AI_CAR/best.pt")
         print("  [INFO] 객체 인식 비활성화 - 라인 트레이싱만 동작")
-        while True:
-            time.sleep(1)  # 스레드 유지 (크래시 방지)
+
+        # shared_state에 detector 비활성 상태 표시
+        with shared_state.lock:
+            shared_state.detector_active = False
+            # 모든 객체 상태를 False로 유지
+            for obj_name in shared_state.KNOWN_OBJECTS:
+                shared_state.object_state[obj_name] = False
+
+        print("  [INFO] Object detector 스레드 종료")
         return
 
-    # Classifier는 옵션
-    use_classifier = CLASSIFIER_PATH is not None
-
-    # 모델 로드
+    # 모델 로드 (단일 모델만 사용)
+    print(f"  [INFO] 모델 로드 중: {DETECTOR_PATH}")
     detector = YOLO(DETECTOR_PATH)
-    classifier = YOLO(CLASSIFIER_PATH) if use_classifier else None
+    print(f"  [✓] YOLO 모델 로드 완료")
 
-    print(f"  [✓] Detector 모델 로드 완료")
-    if use_classifier:
-        print(f"  [✓] Classifier 모델 로드 완료")
-    else:
-        print(f"  [⚠️] Classifier 모델 없음 - 기본 분류만 사용")
+    # 모델 클래스 정보 출력
+    if hasattr(detector, 'names'):
+        print(f"  [INFO] 감지 가능한 객체 클래스:")
+        for idx, name in detector.names.items():
+            print(f"        - {idx}: {name}")
+
+    # detector 활성 상태 표시
+    with shared_state.lock:
+        shared_state.detector_active = True
 
     last_action_time = 0
-    last_label = None
 
     try:
         while True:
@@ -100,7 +122,7 @@ def object_detect_loop():
             frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
             # ROI: 오른쪽 절반 (640x480 기준 320~640)
-            height, width = frame_rgb.shape[:2]
+            _, width = frame_rgb.shape[:2]
             roi_rgb = frame_rgb[:, width // 2:]
             roi_bgr = frame_bgr[:, width // 2:]  # 디버깅용 시각화
 
@@ -115,47 +137,53 @@ def object_detect_loop():
             # ===============================
             #  탐지 결과 처리
             # ===============================
-            for box in results[0].boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                area = (x2 - x1) * (y2 - y1)
-                conf = float(box.conf[0])
-                cls_id = int(box.cls[0])
-                cls_name = results[0].names[cls_id]
+            if results and len(results) > 0 and hasattr(results[0], 'boxes') and results[0].boxes is not None:
+                for box in results[0].boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    area = (x2 - x1) * (y2 - y1)
+                    conf = float(box.conf[0])
+                    cls_id = int(box.cls[0])
+                    cls_name = results[0].names[cls_id]
 
-                if area < MIN_AREA or conf < CONF_THRESHOLD:
-                    continue
-
-                # Classifier 사용 여부에 따라 분류
-                if use_classifier and classifier:
-                    # crop 영역 분류 (RGB 기준)
-                    crop_rgb = roi_rgb[y1:y2, x1:x2]
-                    cls_res = classifier.predict(crop_rgb, imgsz=224, verbose=False)
-                    sub_id = int(cls_res[0].probs.top1)
-                    sub_name = cls_res[0].names[sub_id]
-                    sub_conf = float(cls_res[0].probs.top1conf)
-
-                    if sub_conf < 0.8:
+                    if area < MIN_AREA or conf < CONF_THRESHOLD:
                         continue
-                else:
-                    # Classifier 없이 기본 라벨 사용
-                    sub_name = cls_name if 'cls_name' in locals() else "object"
+
+                    # 검출된 클래스명 사용
+                    detected_name = cls_name
+
+                    # 클래스명 매핑 (모델의 클래스명을 shared_state의 KNOWN_OBJECTS에 맞게 변환)
+                    # 예: "left" -> "turn_left", "right" -> "turn_right", "straight" -> "go_straight"
+                    name_mapping = {
+                        "left": "turn_left",
+                        "right": "turn_right",
+                        "straight": "go_straight",
+                        "stop": "stop",
+                        "slow": "slow",
+                        "horn": "horn",
+                        "traffic": "traffic",
+                        "turn_left": "turn_left",
+                        "turn_right": "turn_right",
+                        "go_straight": "go_straight"
+                    }
+
+                    sub_name = name_mapping.get(detected_name.lower(), detected_name)
                     sub_conf = conf
 
-                # 신호등 처리
-                if sub_name.startswith("traffic"):
-                    traffic_detected = True
-                    traffic_area = area
-                    continue
+                    # 신호등 처리
+                    if sub_name.startswith("traffic"):
+                        traffic_detected = True
+                        traffic_area = area
+                        continue
 
-                # 가장 큰 면적 객체 선택
-                if area > nearest_area:
-                    nearest_area = area
-                    detected_label = sub_name
+                    # 가장 큰 면적 객체 선택
+                    if area > nearest_area:
+                        nearest_area = area
+                        detected_label = sub_name
 
-                # 디버깅용 표시
-                cv2.rectangle(roi_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(roi_bgr, f"{sub_name} ({conf:.2f})", (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                    # 디버깅용 표시
+                    cv2.rectangle(roi_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(roi_bgr, f"{sub_name} ({conf:.2f})", (x1, y1 - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
             # ===============================
             # shared_state 갱신 및 로깅
@@ -193,15 +221,17 @@ def object_detect_loop():
                     print(f"🎯 [객체 감지] {timestamp}")
                     print(f"  📌 객체: {detected_label}")
                     print(f"  📏 크기: {nearest_area}")
-                    print(f"  🎭 신뢰도: {conf:.2%}")
+                    print(f"  🎭 신뢰도: {sub_conf:.2%}")  # sub_conf 사용
 
                     # 표지판 종류별 메시지
                     if detected_label in ["go_straight", "turn_left", "turn_right"]:
-                        print(f"  💾 방향 표지판 → 큐에 저장됨")
+                        print(f"  💾 방향 표지판 → 큐에 저장 예정")
+                        print(f"  📝 lane_tracer가 교차로에서 실행할 예정")
                     elif detected_label == "stop":
-                        print(f"  🛑 정지 표지판 → 즉시 정지 예정")
+                        print(f"  🛑 정지 표지판 → 큐에 저장 예정")
+                        print(f"  📝 lane_tracer가 교차로에서 처리할 예정")
                     elif detected_label == "slow":
-                        print(f"  ⚠️ 서행 표지판 → 속도 감소 예정")
+                        print(f"  ⚠️ 서행 표지판 → 속도 감소 신호")
                     print(f"{'='*50}\n")
 
                 if traffic_detected:
@@ -225,7 +255,6 @@ def object_detect_loop():
                 print(f"[DETECTED] {detected_label} (area={nearest_area})")
                 with shared_state.lock:
                     shared_state.last_trigger = detected_label
-                last_label = detected_label
                 last_action_time = now
 
             # ===============================
