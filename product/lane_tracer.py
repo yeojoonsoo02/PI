@@ -565,6 +565,12 @@ def lane_follow_loop():
     # 회전 강도 임계값
     TURN_THRESHOLD_STRONG = 0.6   # 강한 회전
     TURN_THRESHOLD_MEDIUM = 0.4   # 중간 회전
+    BALANCE_THRESHOLD = 0.15      # 균형 판단 (더 민감하게)
+
+    # 스무딩 파라미터 (부드러운 주행용)
+    SMOOTHING_FACTOR = 0.6        # 이전 상태 가중치 (0.0 ~ 1.0)
+    prev_action = "FORWARD"       # 이전 동작 저장
+    prev_intensity = 0.0          # 이전 회전 강도
 
     # 라인 탐색 방향 (라인을 잃었을 때 마지막으로 본 방향)
     # last_seen_side = None  # 현재 미사용
@@ -627,6 +633,15 @@ def lane_follow_loop():
             # ====== 방향 표지판을 큐에 저장 (주행 중에도 계속 인식) ======
             if OBJECT_DETECTION_ENABLED and frame_count % 5 == 0:
                 store_direction_signs(frame_count)
+
+                # 객체 인식 상태 디버그 (30프레임마다)
+                if frame_count % 30 == 0:
+                    with shared_state.lock:
+                        active_objects = [k for k, v in shared_state.object_state.items() if v]
+                        if active_objects:
+                            print(f"  [객체 활성] {', '.join(active_objects)}")
+                        if recognized_signs:
+                            print(f"  [표지판 큐] {len(recognized_signs)}개 저장됨")
 
             # ====== 교차로에서만 특별 처리 ======
             if vehicle_stopped and stop_reason == "교차로 대기":
@@ -855,32 +870,47 @@ def lane_follow_loop():
 
                 vehicle_stopped = False  # 라인 찾으면 정지 상태 해제
 
+                # ====== 부드러운 주행을 위한 개선된 로직 ======
+                # diff에 비례한 회전 강도 계산
                 if diff < BALANCE_THRESHOLD:
                     # 좌우 균형 잡힘 → 전진
                     motor_forward()
                     action = "FORWARD"
+                    current_intensity = 0.0
 
                 elif left_pixels > right_pixels:
                     # 왼쪽에 청록색이 많음 → 우회전 필요
-                    # 편차가 크면 강한 회전, 작으면 약한 회전
-                    if diff > TURN_THRESHOLD_STRONG:  # 큰 편차 - 강한 회전
-                        motor_right(1.0)
-                    elif diff > TURN_THRESHOLD_MEDIUM:  # 중간 편차 - 중간 회전
-                        motor_right(0.7)
-                    else:  # 작은 편차 - 약한 회전
-                        motor_right(0.5)
+                    # diff에 비례한 회전 강도 (0.3 ~ 0.9)
+                    raw_intensity = 0.3 + (diff * 0.6)  # 기본 0.3 + diff 비례
+                    raw_intensity = min(0.9, raw_intensity)  # 최대 0.9로 제한
+
+                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
+                    if prev_action == "RIGHT":
+                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                    else:
+                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
+
+                    motor_right(current_intensity)
                     action = "RIGHT"
 
                 else:
                     # 오른쪽에 청록색이 많음 → 좌회전 필요
-                    # 편차가 크면 강한 회전, 작으면 약한 회전
-                    if diff > TURN_THRESHOLD_STRONG:  # 큰 편차 - 강한 회전
-                        motor_left(1.0)
-                    elif diff > TURN_THRESHOLD_MEDIUM:  # 중간 편차 - 중간 회전
-                        motor_left(0.7)
-                    else:  # 작은 편차 - 약한 회전
-                        motor_left(0.5)
+                    # diff에 비례한 회전 강도 (0.3 ~ 0.9)
+                    raw_intensity = 0.3 + (diff * 0.6)  # 기본 0.3 + diff 비례
+                    raw_intensity = min(0.9, raw_intensity)  # 최대 0.9로 제한
+
+                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
+                    if prev_action == "LEFT":
+                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                    else:
+                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
+
+                    motor_left(current_intensity)
                     action = "LEFT"
+
+                # 상태 저장 (다음 프레임을 위해)
+                prev_action = action
+                prev_intensity = current_intensity if action in ["LEFT", "RIGHT"] else 0.0
 
                 # 주행 중 객체 인식 트리거 처리
                 handle_runtime_triggers(frame_count)
@@ -905,11 +935,17 @@ def lane_follow_loop():
                 # 균형 상태 표시
                 balance_bar = create_balance_bar(left_ratio, right_ratio)
 
+                # 회전 강도 표시 (부드러운 주행 확인용)
+                if action in ["LEFT", "RIGHT"] and 'current_intensity' in locals():
+                    intensity_str = f" ({current_intensity:.2f})"
+                else:
+                    intensity_str = ""
+
                 # 로그 출력
                 print(f"[{runtime:3d}s] F:{frame_count:5d} | "
                       f"L:{left_pixels:4d} R:{right_pixels:4d} C:{center_pixels:4d} | "
                       f"{balance_bar} | "
-                      f"D:{diff:.2f} | {icon} {action:11s}")
+                      f"D:{diff:.2f} | {icon} {action:11s}{intensity_str}")
 
             time.sleep(0.02)  # 더 빠른 반응
 

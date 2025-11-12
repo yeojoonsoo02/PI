@@ -165,6 +165,23 @@ def object_detect_loop():
                 prev_detected = shared_state.object_detected
                 prev_state = shared_state.object_state.copy()
 
+                # 모든 object_state를 False로 초기화
+                for obj_name in shared_state.KNOWN_OBJECTS:
+                    shared_state.object_state[obj_name] = False
+
+                # 감지된 객체의 object_state를 True로 설정
+                if detected_label:
+                    if detected_label in shared_state.KNOWN_OBJECTS:
+                        shared_state.object_state[detected_label] = True
+                        shared_state.object_area[detected_label] = nearest_area
+                        shared_state.object_last_seen[detected_label] = now
+
+                # traffic 신호등도 상태 업데이트
+                if traffic_detected:
+                    shared_state.object_state["traffic"] = True
+                    shared_state.object_area["traffic"] = traffic_area
+                    shared_state.object_last_seen["traffic"] = now
+
                 # 새로운 상태 업데이트
                 shared_state.object_detected = detected_label
                 shared_state.object_distance = nearest_area
@@ -193,8 +210,9 @@ def object_detect_loop():
                     shared_state.right_turn_done = False
 
                     # 신호등 감지 로그
-                    timestamp = time.strftime("%H:%M:%S")
-                    print(f"🚦 [신호등 감지] {timestamp} | 크기: {traffic_area}")
+                    if not prev_state.get("traffic", False):  # 새로 감지된 경우만
+                        timestamp = time.strftime("%H:%M:%S")
+                        print(f"🚦 [신호등 감지] {timestamp} | 크기: {traffic_area}")
 
             # ===============================
             #  이벤트 트리거 처리
