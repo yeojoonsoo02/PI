@@ -20,14 +20,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def find_model_file():
     """best.pt 모델 파일을 여러 위치에서 찾기"""
     possible_paths = [
-        # Raspberry Pi 경로들
+        # test 디렉토리 경로 추가
+        "/home/keonha/AI_CAR/test/best.pt",
+        "/home/keonha/AI_CAR/test/models/best.pt",
+        # product 디렉토리
         "/home/keonha/AI_CAR/product/best.pt",
+        # 메인 디렉토리
         "/home/keonha/AI_CAR/best.pt",
         "/home/keonha/best.pt",
+        # 현재 디렉토리 기반
         os.path.join(BASE_DIR, "best.pt"),  # 현재 디렉토리
         os.path.join(BASE_DIR, "..", "best.pt"),  # 상위 디렉토리
         os.path.join(BASE_DIR, "models", "best.pt"),
-        "/home/pi/best.pt",  # 기본 pi 사용자 경로
+        # pi 사용자
+        "/home/pi/best.pt",
         "/home/pi/AI_CAR/best.pt",
     ]
 
