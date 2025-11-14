@@ -118,48 +118,38 @@ def motor_forward():
     PWMB.value = SPEED_FORWARD
 
 def motor_left(intensity=1.0):
-    """좌회전 - intensity로 회전 강도 조절 (0.0~1.0)"""
-    # 급격한 회전: 안쪽 바퀴를 후진시킴 (intensity > 0.5일 때)
-    if intensity > 0.5:
-        # 제자리 회전에 가까운 동작
-        AIN1.value = 1  # 왼쪽 후진
-        AIN2.value = 0
-        PWMA.value = SPEED_TURN * 0.3 * intensity
-        BIN1.value = 0  # 오른쪽 전진
-        BIN2.value = 1
-        PWMB.value = SPEED_TURN * 1.2 * intensity
-    else:
-        # 일반 회전: 안쪽 바퀴 느리게
-        left_ratio = 0.0  # 안쪽 바퀴 정지
-        right_ratio = 1.2 * intensity  # 바깥쪽 바퀴 더 빠르게
-        AIN1.value = 0
-        AIN2.value = 1
-        PWMA.value = SPEED_TURN * left_ratio
-        BIN1.value = 0
-        BIN2.value = 1
-        PWMB.value = SPEED_TURN * right_ratio
+    """좌회전 - 양쪽 바퀴 모두 전진하되 속도 차이로 회전 (차동 구동)"""
+    # intensity: 0.0 (직진) ~ 1.0 (최대 회전)
+    # 왼쪽(안쪽) 바퀴 속도 감소, 오른쪽(바깥쪽) 바퀴는 정상 속도
+
+    # 안쪽 바퀴 속도: intensity가 높을수록 더 감속 (100% → 50%)
+    inner_ratio = 1.0 - (0.5 * intensity)  # 1.0 ~ 0.5
+    outer_ratio = 1.0  # 바깥쪽은 항상 100%
+
+    # 양쪽 모두 전진 방향
+    AIN1.value = 0  # 왼쪽 전진
+    AIN2.value = 1
+    PWMA.value = SPEED_FORWARD * inner_ratio  # 안쪽: 감속
+    BIN1.value = 0  # 오른쪽 전진
+    BIN2.value = 1
+    PWMB.value = SPEED_FORWARD * outer_ratio  # 바깥쪽: 정상
 
 def motor_right(intensity=1.0):
-    """우회전 - intensity로 회전 강도 조절 (0.0~1.0)"""
-    # 급격한 회전: 안쪽 바퀴를 후진시킴 (intensity > 0.5일 때)
-    if intensity > 0.5:
-        # 제자리 회전에 가까운 동작
-        AIN1.value = 0  # 왼쪽 전진
-        AIN2.value = 1
-        PWMA.value = SPEED_TURN * 1.2 * intensity
-        BIN1.value = 1  # 오른쪽 후진
-        BIN2.value = 0
-        PWMB.value = SPEED_TURN * 0.3 * intensity
-    else:
-        # 일반 회전: 안쪽 바퀴 느리게
-        left_ratio = 1.2 * intensity  # 바깥쪽 바퀴 더 빠르게
-        right_ratio = 0.0  # 안쪽 바퀴 정지
-        AIN1.value = 0
-        AIN2.value = 1
-        PWMA.value = SPEED_TURN * left_ratio
-        BIN1.value = 0
-        BIN2.value = 1
-        PWMB.value = SPEED_TURN * right_ratio
+    """우회전 - 양쪽 바퀴 모두 전진하되 속도 차이로 회전 (차동 구동)"""
+    # intensity: 0.0 (직진) ~ 1.0 (최대 회전)
+    # 오른쪽(안쪽) 바퀴 속도 감소, 왼쪽(바깥쪽) 바퀴는 정상 속도
+
+    # 안쪽 바퀴 속도: intensity가 높을수록 더 감속 (100% → 50%)
+    outer_ratio = 1.0  # 바깥쪽은 항상 100%
+    inner_ratio = 1.0 - (0.5 * intensity)  # 1.0 ~ 0.5
+
+    # 양쪽 모두 전진 방향
+    AIN1.value = 0  # 왼쪽 전진
+    AIN2.value = 1
+    PWMA.value = SPEED_FORWARD * outer_ratio  # 바깥쪽: 정상
+    BIN1.value = 0  # 오른쪽 전진
+    BIN2.value = 1
+    PWMB.value = SPEED_FORWARD * inner_ratio  # 안쪽: 감속
 
 def motor_stop():
     """정지 - 완전한 브레이크 모드"""
@@ -832,7 +822,6 @@ def lane_follow_loop():
                 total_pixels = 0
                 left_ratio = 0.0
                 right_ratio = 0.0
-                diff = 0.0
 
                 # 박스 크기 계산
                 BOX_WIDTH = int(width * BOX_WIDTH_RATIO)
@@ -907,9 +896,6 @@ def lane_follow_loop():
                 else:
                     left_ratio = 0.0
                     right_ratio = 0.0
-
-                # 좌우 차이
-                diff = abs(left_ratio - right_ratio)
 
             # 균형 임계값은 고정값 사용 (BALANCE_THRESHOLD)
 
