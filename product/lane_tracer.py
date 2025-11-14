@@ -622,7 +622,7 @@ def execute_stored_sign():
         time.sleep(0.5)
         motor_forward()
         time.sleep(0.5)  # 코너 접근
-        motor_right(1.0)  # 🔧 수정: motor_left → motor_right
+        motor_left(1.0)  # 좌회전
         time.sleep(1.2)  # 회전 시간 (충분히 회전)
         motor_forward()
         time.sleep(0.5)  # 라인 복귀
@@ -640,7 +640,7 @@ def execute_stored_sign():
         time.sleep(0.5)
         motor_forward()
         time.sleep(0.5)  # 코너 접근
-        motor_left(1.0)  # 🔧 수정: motor_right → motor_left
+        motor_right(1.0)  # 우회전
         time.sleep(1.2)  # 회전 시간 (충분히 회전)
         motor_forward()
         time.sleep(0.5)  # 라인 복귀
@@ -1007,7 +1007,7 @@ def lane_follow_loop():
                         print("  → 좌회전 선택 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
-                        motor_right(1.0)  # 🔧 수정: motor_left → motor_right
+                        motor_left(1.0)  # 좌회전
                         time.sleep(1.2)  # 회전 시간 (충분히 회전)
                         motor_forward()
                         time.sleep(0.5)  # 라인 복귀 직진
@@ -1020,7 +1020,7 @@ def lane_follow_loop():
                         print("  → 우회전 선택 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
-                        motor_left(1.0)  # 🔧 수정: motor_right → motor_left
+                        motor_right(1.0)  # 우회전
                         time.sleep(1.2)  # 회전 시간 (충분히 회전)
                         motor_forward()
                         time.sleep(0.5)  # 라인 복귀 직진
@@ -1097,7 +1097,7 @@ def lane_follow_loop():
                         print("  → 좌회전 실행 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
-                        motor_right(1.0)  # 🔧 수정: motor_left → motor_right
+                        motor_left(1.0)  # 좌회전
                         time.sleep(1.2)  # 회전 시간 (충분히 회전)
                         motor_forward()
                         time.sleep(0.5)  # 라인 복귀 직진
@@ -1106,7 +1106,7 @@ def lane_follow_loop():
                         print("  → 우회전 실행 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
-                        motor_left(1.0)  # 🔧 수정: motor_right → motor_left
+                        motor_right(1.0)  # 우회전
                         time.sleep(1.2)  # 회전 시간 (충분히 회전)
                         motor_forward()
                         time.sleep(0.5)  # 라인 복귀 직진
