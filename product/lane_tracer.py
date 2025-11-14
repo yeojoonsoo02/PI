@@ -390,7 +390,7 @@ def handle_runtime_triggers(frame_count=0):
 
         # 신뢰도 체크 (90% 이상만 동작)
         if conf < 0.90:
-            if frame_count % 60 == 0:  # 60프레임마다 한 번만 출력
+            if frame_count % 30 == 0:  # 30프레임마다 출력
                 print(f"⚠️ [traffic] 신뢰도 낮음: {conf:.1%} (90% 이상 필요)")
             handled = False
             # 다음 객체 체크로 넘어감 (elif 체인 계속)
@@ -801,21 +801,21 @@ def lane_follow_loop():
                 try:
                     with shared_state.lock:
                         shared_state.latest_frame = frame.copy()
-                        # 차량 주행 중일 때만 로깅 (90프레임마다)
-                        if not vehicle_stopped and frame_count % 90 == 0:
+                        # 차량 주행 중일 때만 로깅 (30프레임마다)
+                        if not vehicle_stopped and frame_count % 30 == 0:
                             obj_module_active = getattr(shared_state, 'detector_active', False)
                             status = "활성" if obj_module_active else "대기"
                             print(f"  [객체탐지] F#{frame_count} 전송 ({status})")
                 except Exception as e:
-                    if not vehicle_stopped and frame_count % 90 == 0:
+                    if not vehicle_stopped and frame_count % 30 == 0:
                         print(f"  [객체탐지 오류] F#{frame_count}: {e}")
 
             # ====== 방향 표지판을 큐에 저장 (주행 중에도 계속 인식) ======
             if OBJECT_DETECTION_ENABLED and frame_count % 5 == 0:
                 store_direction_signs(frame_count)
 
-                # 객체 인식 상태 디버그 (60프레임마다, 간결하게)
-                if frame_count % 60 == 0:
+                # 객체 인식 상태 디버그 (20프레임마다, 간결하게)
+                if frame_count % 20 == 0:
                     with shared_state.lock:
                         active_objects = [k for k, v in shared_state.object_state.items() if v]
                         if active_objects or recognized_signs:
@@ -1079,46 +1079,19 @@ def lane_follow_loop():
 
                 vehicle_stopped = False  # 라인 찾으면 정지 상태 해제
 
-                # ====== 🔧 개선된 로직: 좌우 비율 기반 균형 조향 ======
-                # 좌우 픽셀 비율 계산 (0.0 ~ 1.0)
-                if total_pixels > 0:
-                    left_ratio = left_pixels / total_pixels
-                    right_ratio = right_pixels / total_pixels
-                else:
-                    left_ratio = 0.5
-                    right_ratio = 0.5
-
-                # 이상적인 균형: 50:50
-                # 50%에서 얼마나 벗어났는지 계산 (0.0 ~ 0.5)
-                balance_deviation = abs(left_ratio - 0.5)
-
-                # 균형 임계값 (10% 이내 차이면 직진)
-                BALANCE_THRESHOLD = 0.10  # 0.1 = 10%
-
-                if balance_deviation < BALANCE_THRESHOLD:
-                    # 좌우 균형 잡힘 (40:60 ~ 60:40) → 직진
+                # ====== 부드러운 주행을 위한 개선된 로직 ======
+                # diff에 비례한 회전 강도 계산
+                if diff < BALANCE_THRESHOLD:
+                    # 좌우 균형 잡힘 → 전진
                     motor_forward()
                     action = "FORWARD"
                     current_intensity = 0.0
 
-                elif left_ratio > 0.5:
-                    # 왼쪽 픽셀이 더 많음 (예: 70:30) → 좌회전하여 균형 맞추기
-                    # 불균형 정도에 비례한 회전 강도 (0.0 ~ 1.0)
-                    raw_intensity = min(1.0, balance_deviation * 2.5)  # 0~0.4를 0~1.0으로 매핑
-
-                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
-                    if prev_action == "LEFT":
-                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
-                    else:
-                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
-
-                    motor_left(current_intensity)
-                    action = "LEFT"
-
-                else:
-                    # 오른쪽 픽셀이 더 많음 (예: 30:70) → 우회전하여 균형 맞추기
-                    # 불균형 정도에 비례한 회전 강도 (0.0 ~ 1.0)
-                    raw_intensity = min(1.0, balance_deviation * 2.5)  # 0~0.4를 0~1.0으로 매핑
+                elif left_pixels > right_pixels:
+                    # 왼쪽에 청록색이 많음 → 우회전 필요
+                    # diff에 비례한 회전 강도 (선형 매핑: 0.0 ~ 1.0)
+                    raw_intensity = diff * 1.2  # 선형 매핑
+                    raw_intensity = min(1.0, raw_intensity)  # 최대 1.0로 제한
 
                     # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
                     if prev_action == "RIGHT":
@@ -1128,6 +1101,21 @@ def lane_follow_loop():
 
                     motor_right(current_intensity)
                     action = "RIGHT"
+
+                else:
+                    # 오른쪽에 청록색이 많음 → 좌회전 필요
+                    # diff에 비례한 회전 강도 (선형 매핑: 0.0 ~ 1.0)
+                    raw_intensity = diff * 1.2  # 선형 매핑
+                    raw_intensity = min(1.0, raw_intensity)  # 최대 1.0로 제한
+
+                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
+                    if prev_action == "LEFT":
+                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                    else:
+                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
+
+                    motor_left(current_intensity)
+                    action = "LEFT"
 
                 # 상태 저장 (다음 프레임을 위해)
                 prev_action = action
@@ -1139,8 +1127,8 @@ def lane_follow_loop():
             # 통계 업데이트
             action_stats[action] += 1
 
-            # 로그 출력 (60프레임마다, 간결하게) - 정지 상태일 때는 건너뛰기
-            if frame_count % 60 == 0 and not vehicle_stopped:
+            # 로그 출력 (10프레임마다, 실시간) - 정지 상태일 때는 건너뛰기
+            if frame_count % 10 == 0 and not vehicle_stopped:
                 runtime = int(time.time() - start_time)
 
                 # 상태 아이콘
@@ -1153,21 +1141,14 @@ def lane_follow_loop():
                 }
                 icon = icons.get(action, "?")
 
-                # 좌우 비율 및 불균형 정도 표시
-                if 'left_ratio' in locals() and 'balance_deviation' in locals():
-                    ratio_str = f" [{left_ratio*100:4.1f}:{right_ratio*100:4.1f}%]"
-                    balance_str = f" Δ{balance_deviation*100:4.1f}%"
-                else:
-                    ratio_str = ""
-                    balance_str = ""
-
+                # 회전 강도 표시 (부드러운 주행 확인용)
                 if action in ["LEFT", "RIGHT"] and 'current_intensity' in locals():
                     intensity_str = f" ({current_intensity:.2f})"
                 else:
                     intensity_str = ""
 
                 # 간결한 로그 출력
-                print(f"[{runtime:3d}s] F#{frame_count:5d} | L:{left_pixels:5d} R:{right_pixels:5d}{ratio_str}{balance_str} | {icon}{action:5s}{intensity_str}")
+                print(f"[{runtime:3d}s] F#{frame_count:5d} | L:{left_pixels:4d} R:{right_pixels:4d} C:{center_pixels:4d} | {icon}{action:5s}{intensity_str}")
 
             time.sleep(0.02)  # 더 빠른 반응
 
@@ -1215,9 +1196,7 @@ def lane_follow_loop():
         print(f"  해상도: {width}x{height}")
         print(f"  박스 크기: {BOX_WIDTH}x{BOX_HEIGHT}")
         print(f"  픽셀 임계값: {PIXEL_THRESHOLD}")
-        print(f"  균형 임계값: 10% (좌우 비율 차이)")
-        print(f"  스무딩 계수: {SMOOTHING_FACTOR:.2f}")
-        print(f"  HSV 범위: {lower_cyan} ~ {upper_cyan}")
+        print(f"  균형 임계값: {BALANCE_THRESHOLD:.2f}")
         print(f"  객체 인식: {'활성화' if OBJECT_DETECTION_ENABLED else '비활성화'}")
 
         # 객체 인식 통계 (활성화된 경우)
