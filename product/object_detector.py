@@ -245,6 +245,9 @@ def object_detect_loop():
                     # 검출된 클래스명 사용
                     detected_name = cls_name
 
+                    # 🔍 디버그: 모델이 감지한 원본 클래스명 출력
+                    print(f"\n🔍 [모델 감지] '{detected_name}' - 신뢰도: {conf:.0%} | 크기: {area:,}")
+
                     # 클래스명 매핑 (모델의 클래스명을 shared_state의 KNOWN_OBJECTS에 맞게 변환)
                     # 예: "left" -> "turn_left", "right" -> "turn_right", "straight" -> "go_straight"
                     name_mapping = {
@@ -265,6 +268,7 @@ def object_detect_loop():
 
                     # KNOWN_OBJECTS에 없는 객체는 무시 (예: "sign", "direction", "arrow" 등)
                     if sub_name is None or sub_name not in shared_state.KNOWN_OBJECTS:
+                        print(f"   ⚠️ [필터링됨] '{detected_name}' → name_mapping에 없음 (분류 모델 필요)")
                         continue
                     sub_conf = conf
 
