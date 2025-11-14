@@ -742,7 +742,7 @@ def lane_follow_loop():
     BALANCE_THRESHOLD = 0.15      # 균형 판단 (더 민감하게)
 
     # 스무딩 파라미터 (부드러운 주행용)
-    SMOOTHING_FACTOR = 0.6        # 이전 상태 가중치 (0.0 ~ 1.0)
+    SMOOTHING_FACTOR = 0.3        # 이전 상태 가중치 (빠른 반응을 위해 감소)
     prev_action = "FORWARD"       # 이전 동작 저장
     prev_intensity = 0.0          # 이전 회전 강도
 
@@ -1065,24 +1065,24 @@ def lane_follow_loop():
 
                 vehicle_stopped = False  # 라인 찾으면 정지 상태 해제
 
-                # ====== 🔧 3단계 세밀 균형 제어 시스템 ======
+                # ====== 🔧 3단계 세밀 균형 제어 시스템 (실시간 미세 조정) ======
                 # 50:50 균형 목표 - 좌우 비율에서 얼마나 벗어났는지 계산
                 balance_deviation = abs(left_ratio - 0.5)  # 0.0 ~ 0.5
 
-                # 3단계 제어:
-                # 1단계: ±5% 이내 (45:55 ~ 55:45) → 직진
-                # 2단계: 5~10% (40:60 ~ 45:55) → 약한 회전 (30%)
-                # 3단계: 10% 이상 → 강한 회전 (비례 제어)
+                # 3단계 제어 (더 넓은 직진 범위, 약한 회전 강도):
+                # 1단계: ±8% 이내 (42:58 ~ 58:42) → 직진
+                # 2단계: 8~15% (35:65 ~ 42:58) → 매우 약한 회전 (15%)
+                # 3단계: 15% 이상 → 비례 회전 (최대 60%)
 
-                if balance_deviation < 0.05:
-                    # ✅ 1단계: 완벽한 균형 (±5% 이내) → 직진
+                if balance_deviation < 0.08:
+                    # ✅ 1단계: 양호한 균형 (±8% 이내) → 직진
                     motor_forward()
                     action = "FORWARD"
                     current_intensity = 0.0
 
-                elif balance_deviation < 0.10:
-                    # ⚠️ 2단계: 약간 불균형 (5~10%) → 약한 회전
-                    raw_intensity = 0.30  # 고정 30% 강도
+                elif balance_deviation < 0.15:
+                    # ⚠️ 2단계: 약간 불균형 (8~15%) → 매우 약한 회전
+                    raw_intensity = 0.15  # 고정 15% 강도 (미세 조정)
 
                     # 스무딩 적용
                     if left_ratio > 0.5:
@@ -1103,9 +1103,9 @@ def lane_follow_loop():
                         action = "RIGHT"
 
                 else:
-                    # 🔥 3단계: 큰 불균형 (10% 이상) → 강한 회전 (비례 제어)
-                    # 불균형 정도에 비례한 회전 강도
-                    raw_intensity = min(1.0, balance_deviation * 2.0)  # 10% → 20%, 50% → 100%
+                    # 🔥 3단계: 큰 불균형 (15% 이상) → 비례 회전 (최대 60%)
+                    # 불균형 정도에 비례한 회전 강도 (약하게 제한)
+                    raw_intensity = min(0.6, balance_deviation * 1.5)  # 15% → 22.5%, 40% → 60%
 
                     # 스무딩 적용
                     if left_ratio > 0.5:
