@@ -14,13 +14,6 @@ from datetime import datetime
 from PIL import Image
 
 # ======================================
-# GUI 환경 감지
-# ======================================
-def gui_available():
-    """VNC, HDMI GUI 환경 여부 확인"""
-    return os.environ.get("DISPLAY") is not None
-
-# ======================================
 # 모델 및 파라미터 설정
 # ======================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -46,13 +39,6 @@ def object_detect_loop():
     print(" YOLOv8 Object Detector (RGB 네이티브 처리)")
     print(" 🎯 2단계 인식 시스템: 탐지(Detector) → 분류(Classifier)")
     print("=" * 70)
-
-    # GUI 환경 감지
-    gui_mode = gui_available()
-    if gui_mode:
-        print("  [INFO] GUI 모드 활성화 → VNC/HDMI 화면 표시 가능")
-    else:
-        print("  [INFO] Headless 모드 → 화면 표시 비활성화 (로그만)")
 
     # 모델 파일 확인 (상세 디버깅)
     print(f"  [DEBUG] BASE_DIR: {BASE_DIR}")
@@ -497,21 +483,6 @@ def object_detect_loop():
                 last_status_time = now
 
             # 탐지 실패 로그 제거 (너무 많은 로그 방지)
-
-            # =====================================
-            # GUI 모드일 때만 화면 표시
-            # =====================================
-            if gui_mode:
-                # RGB → BGR 변환 (OpenCV imshow는 BGR 포맷 필요)
-                roi_bgr = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2BGR)
-                cv2.imshow("YOLO Detection ROI", roi_bgr)
-                key = cv2.waitKey(1) & 0xFF
-                if key in (27, ord('q')):
-                    print("[INFO] 사용자 요청으로 종료합니다.")
-                    break
-            else:
-                # Headless 모드에서는 짧은 대기만
-                time.sleep(0.05)
 
             time.sleep(0.2)
 
