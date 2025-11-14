@@ -237,10 +237,6 @@ def object_detect_loop():
                         elif "traffic" in cls_name.lower():
                             icon = "🚦"
 
-                        # 처음 감지되거나 중요한 객체만 로그
-                        if valid_objects == 1:  # 첫 번째 유효 객체만 표시
-                            print(f"\n🎯 [{cls_name}] 감지 - 신뢰도: {conf:.0%} | 크기: {area:,}")
-
                         objects_found += 1
 
                     if area < MIN_AREA or conf < CONF_THRESHOLD:
@@ -261,11 +257,19 @@ def object_detect_loop():
                         "traffic": "traffic",
                         "turn_left": "turn_left",
                         "turn_right": "turn_right",
-                        "go_straight": "go_straight"
+                        "go_straight": "go_straight",
+                        # "sign" 클래스는 매핑하지 않음 (분류 모델이 필요)
                     }
 
-                    sub_name = name_mapping.get(detected_name.lower(), detected_name)
+                    sub_name = name_mapping.get(detected_name.lower(), None)
+
+                    # KNOWN_OBJECTS에 없는 객체는 무시 (예: "sign", "direction", "arrow" 등)
+                    if sub_name is None or sub_name not in shared_state.KNOWN_OBJECTS:
+                        continue
                     sub_conf = conf
+
+                    # ✅ KNOWN_OBJECTS에 매핑된 객체만 로그 표시
+                    print(f"\n🎯 [{sub_name}] 감지 - 신뢰도: {conf:.0%} | 크기: {area:,}")
 
                     # 신호등 처리
                     if sub_name.startswith("traffic"):
