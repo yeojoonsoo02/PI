@@ -1079,43 +1079,65 @@ def lane_follow_loop():
 
                 vehicle_stopped = False  # 라인 찾으면 정지 상태 해제
 
-                # ====== 부드러운 주행을 위한 개선된 로직 ======
-                # diff에 비례한 회전 강도 계산
-                if diff < BALANCE_THRESHOLD:
-                    # 좌우 균형 잡힘 → 전진
+                # ====== 🔧 3단계 세밀 균형 제어 시스템 ======
+                # 50:50 균형 목표 - 좌우 비율에서 얼마나 벗어났는지 계산
+                balance_deviation = abs(left_ratio - 0.5)  # 0.0 ~ 0.5
+
+                # 3단계 제어:
+                # 1단계: ±5% 이내 (45:55 ~ 55:45) → 직진
+                # 2단계: 5~10% (40:60 ~ 45:55) → 약한 회전 (30%)
+                # 3단계: 10% 이상 → 강한 회전 (비례 제어)
+
+                if balance_deviation < 0.05:
+                    # ✅ 1단계: 완벽한 균형 (±5% 이내) → 직진
                     motor_forward()
                     action = "FORWARD"
                     current_intensity = 0.0
 
-                elif left_pixels > right_pixels:
-                    # 왼쪽에 청록색이 많음 → 우회전 필요
-                    # diff에 비례한 회전 강도 (선형 매핑: 0.0 ~ 1.0)
-                    raw_intensity = diff * 1.2  # 선형 매핑
-                    raw_intensity = min(1.0, raw_intensity)  # 최대 1.0로 제한
+                elif balance_deviation < 0.10:
+                    # ⚠️ 2단계: 약간 불균형 (5~10%) → 약한 회전
+                    raw_intensity = 0.30  # 고정 30% 강도
 
-                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
-                    if prev_action == "RIGHT":
-                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                    # 스무딩 적용
+                    if left_ratio > 0.5:
+                        # 왼쪽이 많음 → 좌회전하여 균형 맞추기
+                        if prev_action == "LEFT":
+                            current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                        else:
+                            current_intensity = raw_intensity * 0.7
+                        motor_left(current_intensity)
+                        action = "LEFT"
                     else:
-                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
-
-                    motor_right(current_intensity)
-                    action = "RIGHT"
+                        # 오른쪽이 많음 → 우회전하여 균형 맞추기
+                        if prev_action == "RIGHT":
+                            current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                        else:
+                            current_intensity = raw_intensity * 0.7
+                        motor_right(current_intensity)
+                        action = "RIGHT"
 
                 else:
-                    # 오른쪽에 청록색이 많음 → 좌회전 필요
-                    # diff에 비례한 회전 강도 (선형 매핑: 0.0 ~ 1.0)
-                    raw_intensity = diff * 1.2  # 선형 매핑
-                    raw_intensity = min(1.0, raw_intensity)  # 최대 1.0로 제한
+                    # 🔥 3단계: 큰 불균형 (10% 이상) → 강한 회전 (비례 제어)
+                    # 불균형 정도에 비례한 회전 강도
+                    raw_intensity = min(1.0, balance_deviation * 2.0)  # 10% → 20%, 50% → 100%
 
-                    # 스무딩 적용 (이전 강도와 현재 강도의 가중 평균)
-                    if prev_action == "LEFT":
-                        current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                    # 스무딩 적용
+                    if left_ratio > 0.5:
+                        # 왼쪽이 많음 → 좌회전하여 균형 맞추기
+                        if prev_action == "LEFT":
+                            current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                        else:
+                            current_intensity = raw_intensity * 0.7
+                        motor_left(current_intensity)
+                        action = "LEFT"
                     else:
-                        current_intensity = raw_intensity * 0.7  # 방향 전환 시 부드럽게
-
-                    motor_left(current_intensity)
-                    action = "LEFT"
+                        # 오른쪽이 많음 → 우회전하여 균형 맞추기
+                        if prev_action == "RIGHT":
+                            current_intensity = (SMOOTHING_FACTOR * prev_intensity) + ((1 - SMOOTHING_FACTOR) * raw_intensity)
+                        else:
+                            current_intensity = raw_intensity * 0.7
+                        motor_right(current_intensity)
+                        action = "RIGHT"
 
                 # 상태 저장 (다음 프레임을 위해)
                 prev_action = action
