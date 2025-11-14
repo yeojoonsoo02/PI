@@ -386,64 +386,8 @@ def handle_runtime_triggers(frame_count=0):
 
         handled = True
 
-    # 신호등 - 즉시 정지 후 안전 확인 후 우회전 (연속 프레임 + 중복 실행 방지 + 신뢰도 90% 이상)
-    elif obj_state.get("traffic"):
-        frames = detection_frames.get("traffic", 0)
-
-        # 연속 프레임 임계값 체크
-        if frames < DETECTION_FRAME_THRESHOLD:
-            return handled
-
-        conf = confidence.get("traffic", 0) if confidence else 0
-        current_time = time.time()
-
-        # 신뢰도 체크 (90% 이상만 동작)
-        if conf < 0.90:
-            if frame_count % 60 == 0:  # 60프레임마다 한 번만 출력
-                print(f"⚠️ [traffic] 신뢰도 낮음: {conf:.1%} (90% 이상 필요)")
-            handled = False
-            # 다음 객체 체크로 넘어감 (elif 체인 계속)
-        else:
-            # 중복 실행 체크
-            can_execute = True
-            with shared_state.lock:
-                if "traffic" in shared_state.action_last_time:
-                    time_since = current_time - shared_state.action_last_time["traffic"]
-                    if time_since < shared_state.ACTION_COOLDOWN:
-                        can_execute = False
-                        # 쿨다운 경고는 5초마다만 출력
-                        if "traffic" not in last_cooldown_warnings or (current_time - last_cooldown_warnings["traffic"]) > 5:
-                            print(f"⏳ [traffic] 쿨다운 중... ({shared_state.ACTION_COOLDOWN - time_since:.1f}초 남음)")
-                            last_cooldown_warnings["traffic"] = current_time
-
-            if can_execute:
-                print(f"🚦 [traffic 객체] 동작 실행! (연속 {frames}프레임 감지)")
-                print(f"  └─ {timestamp} | 신뢰도: {conf:.1%}")
-
-                # 즉시 정지
-                motor_stop()
-                print(f"  └─ 3초 대기 중...")
-                time.sleep(3.0)  # 3초 대기
-
-                # 우회전
-                print(f"  └─ 우회전 실행")
-                motor_right(0.8)
-                time.sleep(1.0)  # 1초 우회전
-
-                # 천천히 직진
-                print(f"  └─ 천천히 출발")
-                # 속도를 낮춰서 천천히 출발
-                old_speed = SPEED_FORWARD
-                SPEED_FORWARD = SPEED_SLOW_FORWARD
-                motor_forward()
-                time.sleep(0.5)
-                SPEED_FORWARD = old_speed  # 원래 속도로 복구
-
-                # 마지막 실행 시간 기록
-                with shared_state.lock:
-                    shared_state.action_last_time["traffic"] = current_time
-
-            handled = True
+    # 신호등 - 큐에 저장 (방향 표지판과 동일하게 처리)
+    # store_direction_signs에서 처리됨
 
     # SLOW 모드 자동 해제 체크 (비블로킹 처리)
     try:
@@ -554,7 +498,7 @@ def store_direction_signs(frame_count=0):
         detection_frames = getattr(shared_state, 'detection_frames', {})
 
     timestamp = time.strftime("%H:%M:%S")
-    direction_signs = ["go_straight", "turn_left", "turn_right"]
+    direction_signs = ["go_straight", "turn_left", "turn_right", "traffic"]  # 신호등 추가
 
     for sign in direction_signs:
         if obj_state.get(sign):
@@ -565,6 +509,11 @@ def store_direction_signs(frame_count=0):
                 continue  # 임계값 미달 시 다음 표지판 체크
 
             conf = confidence.get(sign, 0) if confidence else 0
+
+            # 신호등은 신뢰도 90% 이상만 저장
+            if sign == "traffic" and conf < 0.90:
+                continue
+
             sign_info = {
                 'type': sign,
                 'confidence': conf,
@@ -583,7 +532,8 @@ def store_direction_signs(frame_count=0):
                 sign_icons = {
                     "go_straight": "⬆️ 직진",
                     "turn_left": "⬅️ 좌회전",
-                    "turn_right": "➡️ 우회전"
+                    "turn_right": "➡️ 우회전",
+                    "traffic": "🚦 신호등"  # 신호등 추가
                 }
                 sign_name = sign_icons.get(sign, sign)
                 conf_str = f" (신뢰도: {conf:.2f})" if conf > 0 else ""
@@ -630,11 +580,7 @@ def execute_stored_sign():
         return True
 
     elif sign_type == "turn_right":
-        reason = sign_info.get('reason', '')
-        if reason == 'traffic_light':
-            print(f"🚦 신호등 → 우회전 실행")
-        else:
-            print(f"➡️ 우회전 표지판 → 우회전 실행")
+        print(f"➡️ 우회전 표지판 → 우회전 실행")
         print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
         motor_stop()
         time.sleep(0.5)
@@ -645,6 +591,20 @@ def execute_stored_sign():
         motor_forward()
         time.sleep(0.5)  # 라인 복귀
         print(f"  └─ 우회전 완료")
+        return True
+
+    elif sign_type == "traffic":
+        print(f"🚦 신호등 → 우회전 실행")
+        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
+        motor_stop()
+        time.sleep(0.5)
+        motor_forward()
+        time.sleep(0.5)  # 코너 접근
+        motor_right(1.0)  # 우회전
+        time.sleep(1.2)  # 회전 시간 (충분히 회전)
+        motor_forward()
+        time.sleep(0.5)  # 라인 복귀
+        print(f"  └─ 신호등 우회전 완료")
         return True
 
     elif sign_type == "stop":
@@ -1066,7 +1026,8 @@ def lane_follow_loop():
                                 sign_names = {
                                     'go_straight': '직진',
                                     'turn_left': '좌회전',
-                                    'turn_right': '우회전'
+                                    'turn_right': '우회전',
+                                    'traffic': '신호등(우회전)'
                                 }
                                 name = sign_names.get(sign['type'], sign['type'])
                                 print(f"    {i+1}. {name} (신뢰도: {sign['confidence']:.2f})")
