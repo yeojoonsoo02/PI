@@ -408,14 +408,6 @@ def handle_runtime_triggers(frame_count=0):
 
     return handled
 
-def try_branch_by_trigger(frame_count=0):
-    """교차로에서 저장된 방향 표지판 실행"""
-    # 저장된 표지판이 있으면 실행
-    if execute_stored_sign():
-        print(f"  [교차로] 저장된 표지판 실행 완료")
-        return True
-    return False
-
 # ============================================================
 # 카메라 초기화
 # ============================================================
@@ -539,86 +531,6 @@ def store_direction_signs(frame_count=0):
                 conf_str = f" (신뢰도: {conf:.2f})" if conf > 0 else ""
                 print(f"📋 [{sign_name}] 표지판 저장 F#{frame_count}{conf_str} | {frames}프레임 감지 → 큐: {len(recognized_signs)}개")
                 break  # 한 번에 하나만 저장
-
-def execute_stored_sign():
-    """저장된 표지판을 실행 (교차로나 정지 시)"""
-    if not recognized_signs:
-        return False
-
-    # 가장 최근 표지판 가져오기
-    sign_info = recognized_signs.popleft()
-    sign_type = sign_info['type']
-    timestamp = sign_info['timestamp']
-    conf = sign_info['confidence']
-
-    print(f"\n{'='*50}")
-    print(f"📋 저장된 표지판 실행")
-    print(f"{'='*50}")
-
-    if sign_type == "go_straight":
-        print(f"⬆️ 직진 표지판 → 직진 실행")
-        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(1.5)
-        print(f"  └─ 직진 완료")
-        return True
-
-    elif sign_type == "turn_left":
-        print(f"⬅️ 좌회전 표지판 → 좌회전 실행")
-        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(0.5)  # 코너 접근
-        motor_left(1.0)  # 좌회전
-        time.sleep(1.2)  # 회전 시간 (충분히 회전)
-        motor_forward()
-        time.sleep(0.5)  # 라인 복귀
-        print(f"  └─ 좌회전 완료")
-        return True
-
-    elif sign_type == "turn_right":
-        print(f"➡️ 우회전 표지판 → 우회전 실행")
-        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(0.5)  # 코너 접근
-        motor_right(1.0)  # 우회전
-        time.sleep(1.2)  # 회전 시간 (충분히 회전)
-        motor_forward()
-        time.sleep(0.5)  # 라인 복귀
-        print(f"  └─ 우회전 완료")
-        return True
-
-    elif sign_type == "traffic":
-        print(f"🚦 신호등 → 우회전 실행")
-        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
-        motor_stop()
-        time.sleep(0.5)
-        motor_forward()
-        time.sleep(0.5)  # 코너 접근
-        motor_right(1.0)  # 우회전
-        time.sleep(1.2)  # 회전 시간 (충분히 회전)
-        motor_forward()
-        time.sleep(0.5)  # 라인 복귀
-        print(f"  └─ 신호등 우회전 완료")
-        return True
-
-    elif sign_type == "stop":
-        print(f"🛑 STOP 표지판 → 정지 실행")
-        print(f"  └─ 저장시간: {timestamp} | 신뢰도: {conf:.2f}")
-        motor_stop()
-        print(f"  └─ 3초 정지...")
-        time.sleep(3)
-        motor_forward()
-        time.sleep(0.5)  # 라인 복귀
-        print(f"  └─ STOP 완료, 주행 재개")
-        return True
-
-    return False
 
 # ============================================================
 # 균형 바 생성
@@ -926,18 +838,27 @@ def lane_follow_loop():
 
             # ====== 교차로 모드에서 키보드 입력 처리 ======
             if intersection_mode:
-                # 먼저 저장된 표지판 확인하여 실행
-                if OBJECT_DETECTION_ENABLED and try_branch_by_trigger(frame_count):
-                    print("  [교차로] 저장된 표지판 → 자동 실행")
-                    intersection_mode = False
-                    intersection_exit_time = time.time()
-                    intersection_wait_start = None
-                    line_lost_time = None
-                    vehicle_stopped = False
-                    continue
+                # 먼저 저장된 표지판 확인하여 자동 키 입력으로 변환
+                user_input = None
+                if OBJECT_DETECTION_ENABLED and recognized_signs:
+                    sign_info = recognized_signs[0]  # 가장 먼저 저장된 표지판 확인
+                    sign_type = sign_info['type']
+
+                    # 표지판을 키 입력으로 변환
+                    sign_to_key = {
+                        'go_straight': 'w',
+                        'turn_left': 'a',
+                        'turn_right': 'd',
+                        'traffic': 'd'  # 신호등은 우회전
+                    }
+
+                    if sign_type in sign_to_key:
+                        user_input = sign_to_key[sign_type]
+                        recognized_signs.popleft()  # 큐에서 제거
+                        print(f"\n📋 [저장된 표지판] {sign_type} → '{user_input}' 키 자동 입력")
 
                 # 타임아웃 체크 (5초 경과 시 자동 직진)
-                if intersection_wait_start:
+                if not user_input and intersection_wait_start:
                     wait_time = time.time() - intersection_wait_start
 
                     if wait_time >= INTERSECTION_TIMEOUT:
@@ -950,8 +871,9 @@ def lane_follow_loop():
                         vehicle_stopped = False
                         continue
 
-                # 키보드 입력 확인
-                user_input = get_user_input()
+                # 수동 키보드 입력 확인 (자동 입력이 없을 경우에만)
+                if not user_input:
+                    user_input = get_user_input()
                 if user_input:
                     print(f"\n[교차로] 선택: {user_input}")
 
