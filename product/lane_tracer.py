@@ -806,7 +806,7 @@ def lane_follow_loop():
                 # 높은 픽셀 값 감지
                 if high_pixel_start_time is None:
                     high_pixel_start_time = time.time()
-                    print(f"\n⚠️ 비정상 픽셀 값 감지! L:{left_pixels} R:{right_pixels} (임계값: {HIGH_PIXEL_THRESHOLD})")
+                    pass
                 elif time.time() - high_pixel_start_time >= HIGH_PIXEL_DURATION:
                     # 0.5초 이상 지속됨 → 후진 모드 활성화
                     if not reverse_mode:
