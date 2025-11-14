@@ -17,11 +17,11 @@ from PIL import Image
 # 모델 및 파라미터 설정
 # ======================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(BASE_DIR)  # PI 디렉토리
+PARENT_DIR = os.path.dirname(BASE_DIR)  # AI_CAR 디렉토리
 
-# 실제 모델 파일 경로 (프로젝트 루트 기준)
-DETECTOR_PATH = os.path.join(PARENT_DIR, "best.pt")  # 탐지 모델
-CLASSIFIER_PATH = None  # 분류 모델 (현재 없음)
+# 실제 모델 파일 경로 (AI_CAR/models/ 기준)
+DETECTOR_PATH = os.path.join(PARENT_DIR, "models", "sign_traffic_detector.pt")  # 탐지 모델
+CLASSIFIER_PATH = os.path.join(PARENT_DIR, "models", "sign_traffic_classifier.pt")  # 분류 모델
 
 MIN_AREA = 5000        # 너무 작은 객체 제외 (다시 5000으로 상향)
 NEAR_AREA = 20000      # 근접 판단 기준
