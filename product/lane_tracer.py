@@ -22,7 +22,7 @@ try:
     OBJECT_DETECTION_ENABLED = True
 except ImportError:
     OBJECT_DETECTION_ENABLED = False
-    print("[WARNING] shared_state not found. Object detection disabled.")
+    pass
 
 # ============================================================
 # 표지판 인식 큐 시스템
@@ -93,7 +93,7 @@ def init_gpio():
         BUZZER = DigitalOutputDevice(12)
     except Exception:
         BUZZER = None
-        print("[WARNING] Buzzer not available")
+        pass
 
 # 속도 프로파일 (단순화 버전과 동일)
 SPEED_FORWARD_DEFAULT = 0.75  # 기본 직진 속도
@@ -184,14 +184,14 @@ def set_slow_mode():
     global SPEED_FORWARD, SPEED_TURN
     SPEED_FORWARD = SPEED_SLOW_FORWARD
     SPEED_TURN = SPEED_SLOW_TURN
-    print("  [속도] 감속 모드 활성화")
+    pass
 
 def restore_speed():
     """정상 속도 복원"""
     global SPEED_FORWARD, SPEED_TURN
     SPEED_FORWARD = SPEED_FORWARD_DEFAULT
     SPEED_TURN = SPEED_TURN_DEFAULT
-    print("  [속도] 정상 속도 복원")
+    pass
 
 def beep(sec=1.0):
     """부저 울리기"""
@@ -200,7 +200,7 @@ def beep(sec=1.0):
         time.sleep(sec)
         BUZZER.value = 0
     else:
-        print("🔊 (buzzer simulated)")
+        pass
         time.sleep(sec)
 
 # ============================================================
@@ -260,7 +260,7 @@ def handle_runtime_triggers(frame_count=0):
 
                 # 간결한 알림
                 conf_str = f" (신뢰도: {conf:.1%})" if conf > 0 else ""
-                print(f"\n🎯 [{obj_display}] 감지! F#{frame_count}{conf_str}")
+                pass
 
         last_detected_objects = current_detected
     else:
@@ -303,20 +303,20 @@ def handle_runtime_triggers(frame_count=0):
                     can_execute = False
                     # 쿨다운 경고는 첫 1회만 출력
                     if "stop" not in last_cooldown_warnings or (current_time - last_cooldown_warnings["stop"]) > 5:
-                        print(f"⏳ [stop] 쿨다운 중... ({shared_state.ACTION_COOLDOWN - time_since:.1f}초 남음)")
+                        pass
                         last_cooldown_warnings["stop"] = current_time
 
         if can_execute:
-            print(f"🛑 [stop 객체] 동작 실행! (연속 {frames}프레임 감지)")
-            print(f"  └─ {timestamp} | 신뢰도: {conf:.1%}")
+            pass
+            pass
 
             # 즉시 정지
             motor_stop()
-            print(f"  └─ 2초 정지 실행 중...")
+            pass
             time.sleep(2.0)  # 2초 정지
 
             # 정지 후 천천히 출발
-            print(f"  └─ 천천히 출발")
+            pass
             # 속도를 낮춰서 천천히 출발
             old_speed = SPEED_FORWARD
             SPEED_FORWARD = SPEED_SLOW_FORWARD
@@ -341,8 +341,8 @@ def handle_runtime_triggers(frame_count=0):
             try:
                 with shared_state.lock:
                     if not getattr(shared_state, 'slow_mode_active', False):
-                        print(f"⚠️ [SLOW 표지판 감지] 감속 모드 전환 (연속 {frames}프레임)")
-                        print(f"  └─ {timestamp} | Frame #{frame_count} | 신뢰도: {conf:.2f}" if conf else f"  └─ {timestamp} | Frame #{frame_count}")
+                        pass
+                        pass
                         set_slow_mode()
                         # 3초 후 속도 복구를 위한 타이머 설정 (블로킹하지 않음)
                         shared_state.slow_mode_until = time.time() + 3.0
@@ -371,14 +371,14 @@ def handle_runtime_triggers(frame_count=0):
                     can_execute = False
                     # 쿨다운 경고는 5초마다만 출력
                     if "horn" not in last_cooldown_warnings or (current_time - last_cooldown_warnings["horn"]) > 5:
-                        print(f"⏳ [horn] 쿨다운 중... ({shared_state.ACTION_COOLDOWN - time_since:.1f}초 남음)")
+                        pass
                         last_cooldown_warnings["horn"] = current_time
 
         if can_execute:
-            print(f"📢 [horn 객체] 동작 실행! (연속 {frames}프레임 감지)")
-            print(f"  └─ {timestamp} | 신뢰도: {conf:.1%}")
+            pass
+            pass
             beep(1.0)
-            print(f"  └─ 경적 울림 완료")
+            pass
 
             # 마지막 실행 시간 기록
             with shared_state.lock:
@@ -397,14 +397,14 @@ def handle_runtime_triggers(frame_count=0):
                     restore_speed()
                     delattr(shared_state, 'slow_mode_until')
                     shared_state.slow_mode_active = False
-                    print(f"  └─ SLOW 모드 자동 해제 ({timestamp})")
+                    pass
     except:
         pass
 
     if handled:
         with shared_state.lock:
             shared_state.last_trigger = None
-        print(f"  └─ 트리거 처리 완료 및 초기화 ({timestamp})")
+        pass
 
     return handled
 
@@ -419,11 +419,11 @@ def init_camera():
     for attempt in range(max_retries):
         try:
             from picamera2 import Picamera2
-            print(f"[INFO] Initializing camera... (Attempt {attempt + 1}/{max_retries})")
+            pass
 
             # 카메라가 사용 중일 수 있으므로 잠시 대기
             if attempt > 0:
-                print(f"[INFO] Waiting {retry_delay} seconds...")
+                pass
                 time.sleep(retry_delay)
 
                 # 카메라 관련 프로세스 종료 시도
@@ -439,7 +439,7 @@ def init_camera():
             picam2.start()
             time.sleep(2)
 
-            print("[✓] Camera ready (640x480)")
+            pass
 
             class CameraWrapper:
                 def read(self):
@@ -453,19 +453,19 @@ def init_camera():
             return CameraWrapper()
 
         except Exception as e:
-            print(f"[ERROR] Camera failed: {e}")
+            pass
 
             if "Pipeline handler in use" in str(e):
-                print("[INFO] Camera is in use by another process.")
+                pass
                 if attempt < max_retries - 1:
-                    print("[INFO] Attempting to free camera...")
+                    pass
                 else:
-                    print("\n[ERROR] Failed to initialize camera after all retries.")
-                    print("\n해결 방법:")
-                    print("1. 터미널에서 실행:")
-                    print("   sudo pkill -9 python")
-                    print("2. 1초 후 다시 실행:")
-                    print("   python " + sys.argv[0])
+                    pass
+                    pass
+                    pass
+                    pass
+                    pass
+                    pass
 
     return None
 
@@ -529,7 +529,7 @@ def store_direction_signs(frame_count=0):
                 }
                 sign_name = sign_icons.get(sign, sign)
                 conf_str = f" (신뢰도: {conf:.2f})" if conf > 0 else ""
-                print(f"📋 [{sign_name}] 표지판 저장 F#{frame_count}{conf_str} | {frames}프레임 감지 → 큐: {len(recognized_signs)}개")
+                pass
                 break  # 한 번에 하나만 저장
 
 # ============================================================
@@ -555,47 +555,47 @@ def create_balance_bar(left_ratio, right_ratio):
 # ============================================================
 def lane_follow_loop():
     """통합 라인 트레이서 메인 루프"""
-    print("=" * 70)
-    print(" Line Tracer Integrated - 통합 라인 트레이서")
-    print("=" * 70)
+    pass
+    pass
+    pass
 
     # GPIO 초기화 (중요: 프로그램 시작 시 GPIO 설정)
-    print("[INFO] GPIO 초기화 중...")
+    pass
     init_gpio()
-    print("[✓] GPIO 초기화 완료")
+    pass
 
-    print()
-    print("기능:")
-    print("  • 교차로 자동 감지 및 정지")
-    print("  • 객체 인식 트리거 (표지판, 신호등)")
-    print("  • 키보드 수동 제어")
-    print("  • 부저 경적")
-    print()
-    print("교차로 감지 시:")
-    print("  → 자동 정지 후 선택 대기")
-    print("  [a] 좌회전 | [d] 우회전 | [w] 직진 | [s] 정지")
-    print()
-    print("객체 인식: " + ("활성화" if OBJECT_DETECTION_ENABLED else "비활성화"))
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
+    pass
 
     if OBJECT_DETECTION_ENABLED:
-        print("  ├─ STOP, SLOW, HORN 표지판 감지")
-        print("  ├─ 신호등 감지 및 자동 우회전")
-        print("  ├─ 교차로 방향 표지판 (직진/좌회전/우회전)")
-        print("  └─ 실시간 신뢰도 및 프레임 로깅")
+        pass
+        pass
+        pass
+        pass
 
         # shared_state 초기 상태 확인
         try:
             with shared_state.lock:
                 _ = shared_state.object_state.copy()  # 연결 테스트
-            print(f"  [객체탐지 시스템] 초기화 완료 - shared_state 연결 성공")
+            pass
         except Exception as e:
-            print(f"  [객체탐지 시스템] 경고: shared_state 접근 오류: {e}")
+            pass
     else:
-        print("  └─ shared_state 모듈 없음 - 객체 인식 비활성화")
+        pass
 
-    print()
-    print("[INFO] Press Ctrl+C to stop")
-    print()
+    pass
+    pass
+    pass
 
     camera = init_camera()
     if not camera:
@@ -662,7 +662,7 @@ def lane_follow_loop():
         while True:
             ret, frame = camera.read()
             if not ret:
-                print("[ERROR] Failed to read frame")
+                pass
                 break
 
             frame_count += 1
@@ -693,10 +693,10 @@ def lane_follow_loop():
                         if not vehicle_stopped and frame_count % 90 == 0:
                             obj_module_active = getattr(shared_state, 'detector_active', False)
                             status = "활성" if obj_module_active else "대기"
-                            print(f"  [객체탐지] F#{frame_count} 전송 ({status})")
+                            pass
                 except Exception as e:
                     if not vehicle_stopped and frame_count % 90 == 0:
-                        print(f"  [객체탐지 오류] F#{frame_count}: {e}")
+                        pass
 
             # ====== 방향 표지판을 큐에 저장 (주행 중에도 계속 인식) ======
             if OBJECT_DETECTION_ENABLED and frame_count % 5 == 0:
@@ -709,7 +709,7 @@ def lane_follow_loop():
                         if active_objects or recognized_signs:
                             obj_str = f"활성: {', '.join(active_objects)}" if active_objects else "없음"
                             queue_str = f"큐: {len(recognized_signs)}개" if recognized_signs else ""
-                            print(f"  [객체상태] {obj_str} {queue_str}".strip())
+                            pass
 
             # ====== 교차로에서만 특별 처리 ======
             if vehicle_stopped and stop_reason == "교차로 대기":
@@ -806,18 +806,18 @@ def lane_follow_loop():
                 # 높은 픽셀 값 감지
                 if high_pixel_start_time is None:
                     high_pixel_start_time = time.time()
-                    print(f"\n⚠️ 비정상 픽셀 값 감지! L:{left_pixels} R:{right_pixels} (임계값: {HIGH_PIXEL_THRESHOLD})")
+                    pass
                 elif time.time() - high_pixel_start_time >= HIGH_PIXEL_DURATION:
                     # 0.5초 이상 지속됨 → 후진 모드 활성화
                     if not reverse_mode:
                         reverse_mode = True
-                        print(f"🚨 {HIGH_PIXEL_DURATION}초 이상 높은 픽셀 값 지속 → 후진 모드 활성화!")
+                        pass
             else:
                 # 정상 픽셀 값으로 복귀
                 if reverse_mode:
                     reverse_mode = False
                     high_pixel_start_time = None
-                    print(f"✓ 픽셀 값 정상 복귀 (L:{left_pixels} R:{right_pixels}) → 후진 모드 해제, 정상 주행 재개")
+                    pass
                 elif high_pixel_start_time is not None:
                     # 타이머만 리셋 (0.5초 전에 정상 복귀)
                     high_pixel_start_time = None
@@ -826,7 +826,7 @@ def lane_follow_loop():
             if reverse_mode:
                 motor_backward()
                 action = "BACKWARD"
-                print(f"  [후진 중] L:{left_pixels} R:{right_pixels}")
+                pass
                 # 후진 모드일 때는 다른 조향 결정 건너뛰기
                 action_stats[action] += 1
                 time.sleep(0.02)
@@ -855,14 +855,14 @@ def lane_follow_loop():
                     if sign_type in sign_to_key:
                         user_input = sign_to_key[sign_type]
                         recognized_signs.popleft()  # 큐에서 제거
-                        print(f"\n📋 [저장된 표지판] {sign_type} → '{user_input}' 키 자동 입력")
+                        pass
 
                 # 타임아웃 체크 (5초 경과 시 자동 직진)
                 if not user_input and intersection_wait_start:
                     wait_time = time.time() - intersection_wait_start
 
                     if wait_time >= INTERSECTION_TIMEOUT:
-                        print(f"\n⏱️ [교차로 타임아웃] {INTERSECTION_TIMEOUT:.0f}초 경과 → 자동 직진")
+                        pass
                         motor_forward()
                         action = "FORWARD"
                         intersection_mode = False
@@ -875,18 +875,18 @@ def lane_follow_loop():
                 if not user_input:
                     user_input = get_user_input()
                 if user_input:
-                    print(f"\n[교차로] 선택: {user_input}")
+                    pass
 
                     if user_input == 'w':
                         motor_forward()
                         action = "FORWARD"
-                        print("  → 직진 선택")
+                        pass
                         intersection_mode = False
                         intersection_exit_time = time.time()
                         intersection_wait_start = None
                         vehicle_stopped = False
                     elif user_input == 'a':
-                        print("  → 좌회전 선택 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
+                        pass
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_left(1.0)  # 좌회전
@@ -899,7 +899,7 @@ def lane_follow_loop():
                         intersection_wait_start = None
                         vehicle_stopped = False
                     elif user_input == 'd':
-                        print("  → 우회전 선택 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
+                        pass
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_right(1.0)  # 우회전
@@ -914,7 +914,7 @@ def lane_follow_loop():
                     elif user_input == 's':
                         motor_stop()
                         action = "STOP"
-                        print("  → 정지 유지")
+                        pass
                 else:
                     # 키보드 입력 대기 중
                     motor_stop()
@@ -938,12 +938,12 @@ def lane_follow_loop():
                     action = "INTERSECTION"
                     intersection_mode = True
                     intersection_wait_start = time.time()  # 타이머 시작
-                    print(f"\n🛑 교차로 감지! 전방:{center_pixels} 좌우:{total_pixels}")
+                    pass
 
                     # 저장된 표지판 확인
                     if OBJECT_DETECTION_ENABLED:
                         if recognized_signs:
-                            print(f"  📋 저장된 표지판 {len(recognized_signs)}개 확인됨:")
+                            pass
                             for i, sign in enumerate(recognized_signs):
                                 sign_names = {
                                     'go_straight': '직진',
@@ -952,12 +952,12 @@ def lane_follow_loop():
                                     'traffic': '신호등(우회전)'
                                 }
                                 name = sign_names.get(sign['type'], sign['type'])
-                                print(f"    {i+1}. {name} (신뢰도: {sign['confidence']:.2f})")
+                                pass
                         else:
-                            print("  ⚠️ 저장된 표지판 없음 - 수동 선택 필요")
+                            pass
 
-                    print("  [a] 좌회전 | [d] 우회전 | [w] 직진 | [s] 정지")
-                    print(f"  선택 대기 중... ({INTERSECTION_TIMEOUT:.0f}초 후 자동 직진)")
+                    pass
+                    pass
 
             # ====== 라인이 거의 안 보일 때 (교차로가 아닌 경우) ======
             elif total_pixels < PIXEL_THRESHOLD:
@@ -966,8 +966,8 @@ def lane_follow_loop():
                     line_lost_time = time.time()
                     motor_stop()
                     action = "STOP"
-                    print(f"\n⚠️ 라인 이탈! 수동 제어 가능")
-                    print("  [w] 직진 | [a] 좌회전 | [d] 우회전 | [s] 정지")
+                    pass
+                    pass
 
                 # 키보드 입력 확인
                 user_input = get_user_input()
@@ -975,9 +975,9 @@ def lane_follow_loop():
                     if user_input == 'w':
                         motor_forward()
                         action = "FORWARD"
-                        print("  → 직진 실행")
+                        pass
                     elif user_input == 'a':
-                        print("  → 좌회전 실행 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
+                        pass
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_left(1.0)  # 좌회전
@@ -986,7 +986,7 @@ def lane_follow_loop():
                         time.sleep(0.5)  # 라인 복귀 직진
                         action = "LEFT"
                     elif user_input == 'd':
-                        print("  → 우회전 실행 (직진 0.5초 → 회전 1.2초 → 라인 복귀)")
+                        pass
                         motor_forward()
                         time.sleep(0.5)  # 직진으로 접근
                         motor_right(1.0)  # 우회전
@@ -997,14 +997,14 @@ def lane_follow_loop():
                     elif user_input == 's':
                         motor_stop()
                         action = "STOP"
-                        print("  → 정지")
+                        pass
                 # 입력이 없으면 현재 동작 유지
 
             # ====== 라인이 충분히 보일 때 조향 제어 (개선된 비례 제어 버전) ======
             elif total_pixels >= PIXEL_THRESHOLD:
                 # 라인 복귀 알림
                 if line_lost_time is not None:
-                    print("✓ 라인 복귀 → 자동 주행 모드")
+                    pass
                     line_lost_time = None
 
                 vehicle_stopped = False  # 라인 찾으면 정지 상태 해제
@@ -1106,30 +1106,30 @@ def lane_follow_loop():
                     intensity_str = ""
 
                 # 간결한 로그 출력
-                print(f"[{runtime:3d}s] F#{frame_count:5d} | L:{left_pixels:4d} R:{right_pixels:4d} C:{center_pixels:4d} | {icon}{action:5s}{intensity_str}")
+                pass
 
             time.sleep(0.02)  # 더 빠른 반응
 
     except KeyboardInterrupt:
-        print("\n\n[INFO] Stopped by user")
+        pass
 
     finally:
         runtime = int(time.time() - start_time)
-        print()
-        print("=" * 70)
-        print(" Session Summary")
-        print("=" * 70)
-        print(f"Runtime        : {runtime}s")
-        print(f"Total frames   : {frame_count}")
-        print(f"Average FPS    : {frame_count/max(runtime, 1):.1f}")
-        print()
-        print("Actions:")
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
         for action in ["FORWARD", "LEFT", "RIGHT", "INTERSECTION", "STOP", "BACKWARD"]:
             count = action_stats.get(action, 0)
             percentage = (count / max(frame_count, 1)) * 100
             bar = "█" * int(percentage / 2)
-            print(f"  {action:12s} : {count:5d} ({percentage:5.1f}%) {bar}")
-        print()
+            pass
+        pass
 
         # 성능 분석
         forward_ratio = action_stats["FORWARD"] / max(frame_count, 1)
@@ -1137,51 +1137,51 @@ def lane_follow_loop():
         stop_ratio = action_stats["STOP"] / max(frame_count, 1)
 
         if intersection_ratio > 0.1:
-            print("✓ 교차로 감지 성공!")
-            print(f"  → 교차로 감지 비율: {intersection_ratio*100:.1f}%")
+            pass
+            pass
         elif stop_ratio > 0.7:
-            print("✗ 청록색 감지 실패 (대부분 정지)")
-            print("  → HSV 범위 조정 필요")
+            pass
+            pass
         elif forward_ratio > 0.5:
-            print("✓ 좋은 성능 (직진 비율 높음)")
+            pass
         elif forward_ratio > 0.3:
-            print("⚠ 보통 성능 (회전이 많음)")
+            pass
         else:
-            print("⚠ 불안정한 주행 (회전 과다)")
+            pass
 
-        print()
-        print("사용된 설정:")
-        print(f"  해상도: {width}x{height}")
-        print(f"  박스 크기: {BOX_WIDTH}x{BOX_HEIGHT}")
-        print(f"  픽셀 임계값: {PIXEL_THRESHOLD}")
-        print(f"  균형 임계값 (기본/고속): {BASE_BALANCE_THRESHOLD:.2f}/{HIGH_SPEED_BALANCE_THRESHOLD:.2f}")
-        print(f"  객체 인식: {'활성화' if OBJECT_DETECTION_ENABLED else '비활성화'}")
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
+        pass
 
         # 객체 인식 통계 (활성화된 경우)
         if OBJECT_DETECTION_ENABLED:
-            print()
-            print("객체 인식 통계:")
+            pass
+            pass
             try:
                 with shared_state.lock:
                     obj_counts = getattr(shared_state, 'detection_counts', {})
 
                 if obj_counts:
                     for obj_type, count in obj_counts.items():
-                        print(f"  {obj_type}: {count}회 감지")
+                        pass
                 else:
-                    print("  객체 감지 횟수 기록 없음")
-                print("  ※ 자세한 로그는 실행 중 콘솔 출력 참조")
+                    pass
+                pass
             except:
-                print("  객체 감지 통계 접근 실패")
+                pass
 
-        print("=" * 70)
+        pass
 
         # 모터 완전 정지
         motor_stop()
         PWMA.value = 0.0
         PWMB.value = 0.0
         camera.release()
-        print("[✓] Cleanup complete")
+        pass
 
 if __name__ == '__main__':
     lane_follow_loop()
