@@ -152,7 +152,8 @@ def object_detect_loop():
             frame_count += 1
             no_frame_count = 0  # 리셋
 
-            # 이미 RGB이므로 변환 불필요 (lane_tracer에서 RGB로 전달)
+            # ✅ BGR → RGB 변환 (모델 학습 색공간과 일치시키기)
+            frame_rgb = cv2.cvtColor(frame_rgb, cv2.COLOR_BGR2RGB)
 
             # ROI: 오른쪽 절반 (640x480 기준 320~640)
             _, width = frame_rgb.shape[:2]
@@ -186,39 +187,36 @@ def object_detect_loop():
                     cls_id = int(box.cls[0])
                     cls_name = results[0].names[cls_id]
 
-                    # 분류 모델이 있고, 방향 표지판이면 세부 분류
-                    if classifier and cls_name in ["sign", "direction", "arrow", "turn"]:
+                    # ✅ test 버전 방식: 모든 객체를 분류 모델로 재확인
+                    if classifier:
                         # ROI 추출하여 분류 모델 실행
-                        sign_roi = roi_rgb[y1:y2, x1:x2]
-                        if sign_roi.size > 0:
-                            classify_results = classifier(sign_roi, verbose=False)
-                            if classify_results and len(classify_results) > 0:
-                                # 분류 결과에서 가장 확실한 클래스 선택
-                                if hasattr(classify_results[0], 'probs'):
-                                    probs = classify_results[0].probs
-                                    top_class_id = probs.top1
-                                    top_conf = probs.top1conf.item()
+                        crop = roi_rgb[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            # test 버전과 동일한 방식: predict() 사용
+                            cls_res = classifier.predict(crop, imgsz=224, verbose=False)
+                            if cls_res and len(cls_res) > 0:
+                                sub_id = int(cls_res[0].probs.top1)
+                                sub_name = cls_res[0].names[sub_id]
+                                sub_conf = float(cls_res[0].probs.top1conf)
 
-                                    # 분류 모델도 신뢰도 체크 (80% 이상만)
-                                    if top_conf >= CLASSIFIER_CONF_THRESHOLD:
-                                        classified_name = classifier.names[top_class_id]
+                                # 분류 모델 신뢰도 체크 (80% 이상만)
+                                if sub_conf >= CLASSIFIER_CONF_THRESHOLD:
+                                    # 방향 표지판 아이콘
+                                    direction_icon = ""
+                                    if "left" in sub_name.lower() or "turn_left" in sub_name:
+                                        direction_icon = "⬅️"
+                                    elif "right" in sub_name.lower() or "turn_right" in sub_name:
+                                        direction_icon = "➡️"
+                                    elif "straight" in sub_name.lower() or "go_straight" in sub_name:
+                                        direction_icon = "⬆️"
 
-                                        # 방향 표지판 분류 성공
-                                        direction_icon = ""
-                                        if "left" in classified_name.lower() or "turn_left" in classified_name:
-                                            direction_icon = "⬅️"
-                                        elif "right" in classified_name.lower() or "turn_right" in classified_name:
-                                            direction_icon = "➡️"
-                                        elif "straight" in classified_name.lower() or "go_straight" in classified_name:
-                                            direction_icon = "⬆️"
+                                    # 분류 성공 로그
+                                    if direction_icon:
+                                        print(f"   🔄 [2단계 분류] {cls_name} → {sub_name} (신뢰도: {sub_conf:.1%})")
+                                        print(f"      ✨ {direction_icon} **방향 표지판 확정!** {direction_icon}")
 
-                                        # 분류 성공 시에만 로그
-                                        if direction_icon:
-                                            print(f"   🔄 [2단계 분류] {cls_name} → {classified_name} (신뢰도: {top_conf:.1%})")
-                                            print(f"      ✨ {direction_icon} **방향 표지판 확정!** {direction_icon}")
-
-                                        cls_name = classified_name  # 분류된 이름으로 변경
-                                        conf = (conf + top_conf) / 2  # 평균 신뢰도
+                                    cls_name = sub_name  # 분류된 이름으로 변경
+                                    conf = (conf + sub_conf) / 2  # 평균 신뢰도
 
                     # 조건을 통과한 객체만 표시 (80% 이상, 5000 이상)
                     if conf >= CONF_THRESHOLD and area >= MIN_AREA:
